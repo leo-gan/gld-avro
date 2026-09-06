@@ -1,6 +1,11 @@
 # Local notes and scratch; never commit.
 temp/
 
+# Secrets. Never commit.
+.env
+.env.*
+!.env.example
+
 # Pixi
 .pixi/
 
