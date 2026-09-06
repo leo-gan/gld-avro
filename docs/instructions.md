@@ -25,15 +25,49 @@ A schema is the type definition for every Avro value. You write it once. The
 generator turns it into a Mojo struct. The runtime also parses the same text
 at decode time when you use `GenericDatum` or schema resolution.
 
-There are two input formats.
+Avro has two ways to write the **same** type system. They are not two
+encodings. Binary bytes, Object Container Files, and Avro JSON encoding do
+not care which file you authored. After parse, this library holds one
+`SchemaPool` and the generator emits the same Mojo.
 
-| Format | Extension | What it is |
+| File | Official name | Role |
 | --- | --- | --- |
-| Avro JSON schema | `.avsc` | A JSON string, array, or object as in the Avro spec |
-| Avro IDL | `.avdl` | A compact language that this library converts to JSON, then parses |
+| `.avsc` | Avro JSON schema | The schema language in the spec. A JSON string, array, or object. |
+| `.avdl` | Avro IDL | A Java-like authoring language. People write it; tools compile it to JSON. |
+| `.avpr` | Avro protocol JSON | Compiled IDL: a `protocol` object with a `types` array and optional RPC `messages`. |
 
-Start with `.avsc` unless you already have an IDL file. A record is a named
-object with ordered fields:
+`.avsc` exists because the specification *is* JSON. OCF metadata key
+`avro.schema`, Parsing Canonical Form, and the CRC-64-AVRO fingerprint are
+all computed from that JSON (or its canonical form), not from IDL text.
+
+`.avdl` exists because JSON is noisy for a large protocol: nested quotes,
+repeated `"type"` keys, and no `import` story that reads like source code.
+IDL gives `record`, `enum`, `fixed`, `T?` for a nullable, field defaults as
+literals, and `import schema` / `import idl` / `import protocol`. A
+`protocol` block can also declare RPC `message`s. This library parses the
+data types and skips those RPC bodies.
+
+This library's path is: `.avdl` → JSON schema → the same parser as `.avsc` →
+the same emitter. `--schema` starts at the JSON file. `--idl` starts at the
+IDL file. You do not keep two sources of truth for one type. Pick one file
+to edit.
+
+Use `.avsc` when the schema is the artifact you store or send (files, OCF
+headers, other languages' `parse`). Use `.avdl` when you already have IDL
+or you prefer the compact syntax. Start with `.avsc` unless you already have
+an IDL file.
+
+| Topic | `.avsc` | `.avdl` |
+| --- | --- | --- |
+| Syntax | JSON | IDL (`record Name { … }`) |
+| Optional field | `["null", "T"]` | `T?` |
+| Field default | JSON (`false`, `0`, `null`) | IDL literal (`false`, `0`, `null`) |
+| Namespace | `"namespace": "…"` on the object | `@namespace("…")` |
+| Sharing types | Nested JSON, or a JSON array of declarations | `import schema` / `import idl` / `import protocol` |
+| RPC | Not in a schema file | `message` in a `protocol` (this library skips the body) |
+| What OCF stores | This JSON (or equivalent) | Not the `.avdl` text |
+
+A JSON-schema record is a named object with ordered fields:
 
 ```json
 {

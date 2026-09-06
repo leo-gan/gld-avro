@@ -35,9 +35,11 @@ Requires **Mojo 1.0.0**.
 ## Generate Mojo from a schema
 
 Write an [Avro](https://en.wikipedia.org/wiki/Apache_Avro) schema as JSON
-(`.avsc`) or Avro IDL (`.avdl`). Then run the generator. After a conda install
-the command is `gld-avrogen-mojo`. In a checkout, call the same CLI through
-Mojo:
+(`.avsc`) or Avro IDL (`.avdl`). They describe the same types. `.avsc` is
+the spec's JSON schema, which OCF and fingerprints actually store. `.avdl`
+is a compact authoring language that this library compiles to that JSON.
+Then run the generator. After a conda install the command is
+`gld-avrogen-mojo`. In a checkout, call the same CLI through Mojo:
 
 ```bash
 pixi run mojo run -I src src/codegen/cli.mojo -- \
