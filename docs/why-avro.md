@@ -1,17 +1,21 @@
 # Why Avro
 
-Apache Avro is a schema-first binary format. Every value is written against a
-schema. The reader must have a schema too. The two schemas do not have to be
-identical. Avro defines how a writer schema is resolved against a reader schema.
+[Apache Avro](https://en.wikipedia.org/wiki/Apache_Avro) is a schema-first
+binary format. Every value is written against a schema. The reader must have a
+schema too. The two schemas do not have to be identical. Avro defines how a
+writer schema is resolved against a reader schema.
 
 This library implements that format in Mojo. It does not call libavro. Python
 `avro` is used only as a test oracle.
 
 ## Binary encoding
 
-Avro does not put field tags on the wire. Fields appear in schema order. Integers
-use ZigZag plus an unsigned varint. A `null` value is zero bytes. A `boolean` is
-one byte, `0` or `1`. Strings and bytes start with a `long` length.
+Avro does not put field tags on the wire. Fields appear in schema order. Signed
+integers use [ZigZag encoding](https://en.wikipedia.org/wiki/Variable-length_quantity#Zigzag_encoding)
+followed by an unsigned varint. ZigZag maps a signed integer onto a non-negative
+integer so small magnitudes, positive or negative, stay short on the wire. A
+`null` value is zero bytes. A `boolean` is one byte, `0` or `1`. Strings and
+bytes start with a `long` length.
 
 Unions start with a `long` branch index, then the chosen value. The two-branch
 form `["null", "T"]` is how Avro spells an optional field. This library maps that

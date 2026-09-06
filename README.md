@@ -9,10 +9,13 @@ to encode or decode at runtime.
 
 This repository is a standalone library. It is not part of any other project.
 
+Documentation: [leo-gan.github.io/gld-avro](https://leo-gan.github.io/gld-avro/).
+That site has the install steps, schema-generation walkthrough, examples, and
+test-data notes.
+
 ## Install
 
-Published package (linux-64) on [prefix.dev/leo-gan/leo-gan](https://prefix.dev/leo-gan/leo-gan)
-will be available after the first release:
+Published package (linux-64) on [prefix.dev/leo-gan/leo-gan](https://prefix.dev/leo-gan/leo-gan):
 
 ```bash
 pixi add --channel https://prefix.dev/leo-gan/leo-gan mojo-avro
@@ -28,6 +31,25 @@ pixi run test
 ```
 
 Requires **Mojo 1.0.0**.
+
+## Generate Mojo from a schema
+
+Write an [Avro](https://en.wikipedia.org/wiki/Apache_Avro) schema as JSON
+(`.avsc`) or Avro IDL (`.avdl`). Then run the generator. After a conda install
+the command is `gld-avrogen-mojo`. In a checkout, call the same CLI through
+Mojo:
+
+```bash
+pixi run mojo run -I src src/codegen/cli.mojo -- \
+  --schema testdata/avsc/benchmark_v2.avsc --out tests/generated
+```
+
+`--schema` reads `.avsc`. `--idl` reads `.avdl`. `--out` is the directory for
+the generated `.mojo` files. `pixi run generate` rebuilds the in-tree
+`Message` type from `testdata/avsc/benchmark_v2.avsc`.
+
+How to write a schema, what the emitter emits, and how to import the result
+are in [Instructions](https://leo-gan.github.io/gld-avro/instructions/).
 
 ## Layout
 
