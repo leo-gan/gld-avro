@@ -38,6 +38,8 @@ jobs:
             -c https://conda.modular.com/max
 
       - name: Upload to prefix.dev
+        env:
+          PREFIX_API_KEY: ${{ secrets.PREFIX_API_KEY }}
         run: |
           shopt -s nullglob
           pkgs=(output/**/*.conda)
