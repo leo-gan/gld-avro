@@ -51,5 +51,31 @@ def test_open_ocf_reader() raises:
     assert_true(ok)
 
 
+def test_ocf_deflate_roundtrip() raises:
+    var m = Message()
+    m.f_int32 = 8
+    var payload = encode(m)
+    var objs = List[List[Byte]]()
+    objs.append(payload^)
+    var file = write_ocf(m.schema_json(), objs^, 1)
+    var back = read_ocf[Message](file)
+    assert_equal(len(back), 1)
+    assert_equal(back[0].f_int32, Int32(8))
+
+
+def test_ocf_bad_magic() raises:
+    var junk = List[Byte]()
+    junk.append(Byte(1))
+    junk.append(Byte(2))
+    junk.append(Byte(3))
+    junk.append(Byte(4))
+    var threw = False
+    try:
+        _ = read_ocf[Message](junk)
+    except _:
+        threw = True
+    assert_true(threw)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

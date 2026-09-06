@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_true
+from std.testing import TestSuite, assert_equal, assert_true
 
 from runtime.resolve import can_resolve, named_match
 from schema.parse_avsc import parse_avsc
@@ -79,6 +79,47 @@ def test_compile_plan_promote() raises:
     assert_true(plan.valid)
     assert_true(len(plan.actions) >= 1)
     assert_true(plan.actions[0] == ACT_PROMOTE)
+
+
+def test_field_reorder_and_default() raises:
+    from runtime.resolve import decode_resolving_generic
+    from wire.writer import WireWriter
+
+    var w = parse_avsc(
+        String(
+            '{"type":"record","name":"W","fields":[{"name":"b","type":"int"},{"name":"extra","type":"int"}]}'
+        )
+    )
+    var r = parse_avsc(
+        String(
+            '{"type":"record","name":"W","fields":[{"name":"a","type":"int","default":7},{"name":"b","type":"int"}]}'
+        )
+    )
+    var enc = WireWriter()
+    enc.write_int(Int32(3))
+    enc.write_int(Int32(9))
+    var g = decode_resolving_generic(enc^.finish(), w^, r^)
+    var rec = g.nodes[g.root]
+    assert_equal(rec.count, 2)
+    # reader order: a (default 7), b (writer 3)
+    assert_equal(g.nodes[g.refs[rec.first]].i, Int64(7))
+    assert_equal(g.nodes[g.refs[rec.first + 1]].i, Int64(3))
+
+
+def test_enum_unknown_uses_default() raises:
+    from runtime.resolve import decode_resolving_generic
+    from wire.writer import WireWriter
+
+    var w = parse_avsc(
+        String('{"type":"enum","name":"E","symbols":["A","B","C"]}')
+    )
+    var r = parse_avsc(
+        String('{"type":"enum","name":"E","symbols":["A","B"],"default":"A"}')
+    )
+    var enc = WireWriter()
+    enc.write_int(Int32(2))
+    var g = decode_resolving_generic(enc^.finish(), w^, r^)
+    assert_equal(g.nodes[g.root].i, Int64(0))
 
 
 def main() raises:

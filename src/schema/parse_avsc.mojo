@@ -8,7 +8,7 @@ from json.value import (
     JSON_STRING,
     JsonDoc,
 )
-from schema.names import fullname_of, namespace_of, valid_unqualified_name
+from schema.names import fullname_of, namespace_of, unqualified_name, valid_unqualified_name
 from schema.model import (
     ST_ARRAY,
     ST_BOOL,
@@ -161,6 +161,8 @@ def _record(
     if name_id < 0:
         raise SchemaError("record missing name")
     var raw = doc.as_string(name_id)
+    if not valid_unqualified_name(unqualified_name(raw)):
+        raise SchemaError("illegal record name")
     var dns = _decl_ns(doc, id, ns)
     var full = fullname_of(raw, dns)
     var node = SchemaNode()
@@ -211,6 +213,10 @@ def _record(
                 )
                 if b0 == ST_NULL and defj != "null":
                     raise SchemaError("union default must match first branch")
+                if b0 == ST_STRING and (
+                    defj.byte_length() == 0 or defj.as_bytes()[0] != Byte(34)
+                ):
+                    raise SchemaError("union default must match first branch")
         pool.add_field(self_id, fname, ftid, has_def, defj)
         i += 1
     return self_id
@@ -222,10 +228,13 @@ def _enum(
     var name_id = doc.find(id, String("name"))
     if name_id < 0:
         raise SchemaError("enum missing name")
+    var raw = doc.as_string(name_id)
+    if not valid_unqualified_name(unqualified_name(raw)):
+        raise SchemaError("illegal enum name")
     var dns = _decl_ns(doc, id, ns)
     var node = SchemaNode()
     node.kind = ST_ENUM
-    node.name = fullname_of(doc.as_string(name_id), dns)
+    node.name = fullname_of(raw, dns)
     node.namespace = namespace_of(node.name)
     var eid = pool.add(node)
     var syms = doc.find(id, String("symbols"))
@@ -273,10 +282,13 @@ def _fixed(
     var size_id = doc.find(id, String("size"))
     if name_id < 0 or size_id < 0:
         raise SchemaError("fixed missing name or size")
+    var raw = doc.as_string(name_id)
+    if not valid_unqualified_name(unqualified_name(raw)):
+        raise SchemaError("illegal fixed name")
     var dns = _decl_ns(doc, id, ns)
     var node = SchemaNode()
     node.kind = ST_FIXED
-    node.name = fullname_of(doc.as_string(name_id), dns)
+    node.name = fullname_of(raw, dns)
     node.namespace = namespace_of(node.name)
     node.size = Int(doc.as_int(size_id))
     return pool.add(node)
