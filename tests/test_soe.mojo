@@ -17,5 +17,25 @@ def test_soe_roundtrip() raises:
     assert_equal(m2.f_int32, Int32(150))
 
 
+def test_soe_two_arg_same_schema() raises:
+    var m = Message()
+    m.f_int32 = 4
+    var buf = encode_single_object(m)
+    var m2 = decode_single_object[Message](buf, m.schema_json())
+    assert_equal(m2.f_int32, Int32(4))
+
+
+def test_soe_bad_magic_rejected() raises:
+    var threw = False
+    try:
+        var junk = List[Byte]()
+        junk.append(Byte(0))
+        junk.append(Byte(0))
+        _ = decode_single_object[Message](junk)
+    except _:
+        threw = True
+    assert_true(threw)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

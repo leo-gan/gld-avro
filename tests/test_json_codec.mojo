@@ -48,5 +48,22 @@ def test_json_union_null() raises:
     assert_equal(g.nodes[g.root].i, Int64(0))
 
 
+def test_json_union_fullname_accepted() raises:
+    var schema = String(
+        '[{"type":"record","name":"Foo","namespace":"com.ex","fields":[{"name":"x","type":"int"}]},"string"]'
+    )
+    var p = parse_avsc(schema)
+    var root = p.root
+    var g = decode_json_generic(
+        String('{"Foo":{"x":1}}'), p^, root
+    )
+    assert_true(g.nodes[g.root].kind == 13)
+    var p2 = parse_avsc(schema)
+    var g2 = decode_json_generic(
+        String('{"com.ex.Foo":{"x":2}}'), p2^, p2.root
+    )
+    assert_true(g2.nodes[g2.root].kind == 13)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

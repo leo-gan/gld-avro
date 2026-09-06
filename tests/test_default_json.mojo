@@ -10,6 +10,18 @@ def test_default_int() raises:
     assert_equal(g.nodes[g.root].i, Int64(7))
 
 
+def test_default_bool_string_long() raises:
+    var pb = parse_avsc(String('"boolean"'))
+    var gb = decode_default(String("true"), pb^, pb.root)
+    assert_true(gb.nodes[gb.root].b)
+    var ps = parse_avsc(String('"string"'))
+    var gs = decode_default(String("\"ab\""), ps^, ps.root)
+    assert_equal(gs.nodes[gs.root].s, String("ab"))
+    var pl = parse_avsc(String('"long"'))
+    var gl = decode_default(String("99"), pl^, pl.root)
+    assert_equal(gl.nodes[gl.root].i, Int64(99))
+
+
 def test_default_null_union_first() raises:
     var p = parse_avsc(
         String(

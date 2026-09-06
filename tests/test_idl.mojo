@@ -46,5 +46,28 @@ def test_parse_avdl_import_schema() raises:
     assert_true(p.find_name(String("Wrap")) >= 0)
 
 
+def test_avdl_rejected_by_parse_avpr() raises:
+    from schema.parse_avpr import parse_avpr
+
+    var threw = False
+    try:
+        _ = parse_avpr(String("@namespace(\"n\") protocol P { record R { int x; } }"))
+    except _:
+        threw = True
+    assert_true(threw)
+
+
+def test_avpr_rejected_by_parse_avdl() raises:
+    var f = open("testdata/avpr/bench.avpr", "r")
+    var text = String(f.read())
+    f.close()
+    var threw = False
+    try:
+        _ = parse_avdl(text)
+    except _:
+        threw = True
+    assert_true(threw)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
