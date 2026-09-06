@@ -1,10 +1,10 @@
 from std.collections import List, Span
 
-from runtime.datum import AvroDatum, decode, encode
+from runtime.datum import AvroDatum, decode, decode_resolving, encode
 from runtime.error import DecodeError
+from schema.canonical import canonical_form
 from schema.fingerprint import crc64_avro
 from schema.parse_avsc import parse_avsc
-from schema.canonical import canonical_form
 
 
 def encode_single_object[T: AvroDatum](value: T) raises DecodeError -> List[Byte]:
@@ -29,11 +29,44 @@ def encode_single_object[T: AvroDatum](value: T) raises DecodeError -> List[Byte
     return out^
 
 
-def decode_single_object[
-    T: AvroDatum, origin: ImmOrigin
-](buf: Span[Byte, origin]) raises DecodeError -> T:
+def soe_fingerprint[
+    origin: ImmOrigin
+](buf: Span[Byte, origin]) raises DecodeError -> UInt64:
     if len(buf) < 10:
         raise DecodeError(DecodeError.KIND_SOE, 0)
     if Int(buf[0]) != 0xC3 or Int(buf[1]) != 0x01:
         raise DecodeError(DecodeError.KIND_SOE, 0)
+    var fp: UInt64 = 0
+    var i = 0
+    while i < 8:
+        fp |= UInt64(buf[2 + i]) << UInt64(i * 8)
+        i += 1
+    return fp
+
+
+def decode_single_object[
+    T: AvroDatum, origin: ImmOrigin
+](buf: Span[Byte, origin]) raises DecodeError -> T:
+    var fp = soe_fingerprint(buf)
+    var want: UInt64
+    try:
+        want = crc64_avro(canonical_form(parse_avsc(T().schema_json())))
+    except _:
+        raise DecodeError(DecodeError.KIND_SOE, 0)
+    if fp != want:
+        raise DecodeError(DecodeError.KIND_SOE, 2)
     return decode[T, origin](buf[10:])
+
+
+def decode_single_object[
+    T: AvroDatum, origin: ImmOrigin
+](buf: Span[Byte, origin], writer_schema_json: String) raises DecodeError -> T:
+    var fp = soe_fingerprint(buf)
+    var want: UInt64
+    try:
+        want = crc64_avro(canonical_form(parse_avsc(writer_schema_json)))
+    except _:
+        raise DecodeError(DecodeError.KIND_SOE, 0)
+    if fp != want:
+        raise DecodeError(DecodeError.KIND_SOE, 2)
+    return decode_resolving[T, origin](buf[10:], writer_schema_json)

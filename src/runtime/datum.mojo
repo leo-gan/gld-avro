@@ -1,6 +1,11 @@
 from std.collections import List, Span
 
 from runtime.error import DecodeError
+from runtime.generic import GenericDatum
+from runtime.resolve import decode_resolving_generic
+from schema.canonical import canonical_form
+from schema.model import SchemaPool
+from schema.parse_avsc import parse_avsc
 from wire.reader import WireReader
 from wire.writer import WireWriter
 
@@ -37,3 +42,33 @@ def decode[
     var dec = WireReader[origin](buf)
     msg.decode_from(dec)
     return msg^
+
+
+def convert_to[T: AvroDatum](datum: GenericDatum) raises DecodeError -> T:
+    var want: String
+    try:
+        want = canonical_form(parse_avsc(T().schema_json()))
+    except _:
+        raise DecodeError(DecodeError.KIND_RESOLVE, 0)
+    var got: String
+    try:
+        got = canonical_form(datum.pool)
+    except _:
+        raise DecodeError(DecodeError.KIND_RESOLVE, 0)
+    if want != got:
+        raise DecodeError(DecodeError.KIND_RESOLVE, 0)
+    return decode[T](datum.encode())
+
+
+def decode_resolving[
+    T: AvroDatum, origin: ImmOrigin
+](buf: Span[Byte, origin], writer_schema_json: String) raises DecodeError -> T:
+    var writer: SchemaPool
+    var reader: SchemaPool
+    try:
+        writer = parse_avsc(writer_schema_json)
+        reader = parse_avsc(T().schema_json())
+    except _:
+        raise DecodeError(DecodeError.KIND_RESOLVE, 0)
+    var g = decode_resolving_generic(buf, writer^, reader^)
+    return convert_to[T](g)

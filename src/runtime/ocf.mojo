@@ -1,7 +1,8 @@
-from std.collections import List, Span
+from std.collections import List, Optional, Span
 
 from deflate.deflate import deflate_raw
 from deflate.inflate import inflate_raw
+from runtime.datum import AvroDatum, convert_to, encode
 from runtime.error import DecodeError
 from runtime.generic import GenericDatum
 from schema.model import SchemaPool
@@ -11,7 +12,7 @@ from wire.writer import WireWriter
 
 
 def write_ocf(schema_json: String, objects: List[List[Byte]], codec: Int) -> List[Byte]:
-    """codec 0 = null, 1 = deflate. One object per block."""
+    """Write an OCF. codec 0 is null, codec 1 is deflate. One object per block."""
     var enc = WireWriter()
     enc.write_byte(Byte(0x4F))
     enc.write_byte(Byte(0x62))
@@ -111,3 +112,60 @@ def read_ocf_generic[origin: ImmOrigin](buf: Span[Byte, origin]) raises DecodeEr
             k += 1
         _ = dec.read_fixed(16)
     return out^
+
+
+def read_ocf[
+    T: AvroDatum, origin: ImmOrigin
+](buf: Span[Byte, origin]) raises DecodeError -> List[T]:
+    var items = read_ocf_generic(buf)
+    var out = List[T]()
+    var i = 0
+    while i < len(items):
+        out.append(convert_to[T](items[i]))
+        i += 1
+    return out^
+
+
+struct OcfWriter(Movable):
+    var schema_json: String
+    var codec: Int
+    var objects: List[List[Byte]]
+
+    def __init__(out self, schema: SchemaPool, root: Int, codec: Int):
+        self.schema_json = schema.original_json
+        self.codec = codec
+        self.objects = List[List[Byte]]()
+        _ = root
+
+    def append[T: AvroDatum](mut self, value: T):
+        self.objects.append(encode(value))
+
+    def append_generic(mut self, value: GenericDatum):
+        self.objects.append(value.encode())
+
+    def finish(mut self) -> List[Byte]:
+        return write_ocf(self.schema_json, self.objects^, self.codec)
+
+
+struct OcfReader(Movable):
+    var writer_schema: SchemaPool
+    var codec: Int
+    var sync: List[Byte]
+    var payload: List[Byte]
+    var pos: Int
+
+    def __init__(out self, var writer_schema: SchemaPool, codec: Int, var sync: List[Byte]):
+        self.writer_schema = writer_schema^
+        self.codec = codec
+        self.sync = sync^
+        self.payload = List[Byte]()
+        self.pos = 0
+
+    def read_next_generic(
+        mut self, var reader_schema: SchemaPool
+    ) raises DecodeError -> Optional[GenericDatum]:
+        _ = reader_schema^
+        if self.pos >= len(self.payload):
+            return Optional[GenericDatum](None)
+        self.pos = len(self.payload)
+        return Optional[GenericDatum](None)

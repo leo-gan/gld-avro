@@ -34,3 +34,16 @@ object. Codec `0` is `null`. Codec `1` is raw DEFLATE.
 
 `encode_single_object` writes `C3 01`, the CRC-64-AVRO fingerprint, and the
 binary datum. `decode_single_object` checks the header and decodes the payload.
+A second argument is the writer schema JSON when the reader type differs.
+
+## Resolution
+
+`named_match` / `can_resolve` implement writer/reader rules: unqualified names,
+reader aliases, promotions. `decode_resolving` decodes writer bytes then
+`convert_to[T]`.
+
+## Avro JSON
+
+`encode_json` / `decode_json` are the official Avro JSON encoding. Union
+non-null branches wrap as `{"shortName": value}`. `decode_default` is the
+default-only subset (union = first branch, no wrapper).

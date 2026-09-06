@@ -1,0 +1,16 @@
+{
+  "protocol": "Bench",
+  "namespace": "benchmark.v2",
+  "types": [
+    {
+      "type": "record",
+      "name": "Message",
+      "fields": [
+        {"name": "f_int32", "type": "int"}
+      ]
+    }
+  ],
+  "messages": {
+    "ping": {"request": [], "response": "null"}
+  }
+}

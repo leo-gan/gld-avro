@@ -8,6 +8,7 @@ from json.value import (
     JSON_STRING,
     JsonDoc,
 )
+from schema.names import fullname_of, namespace_of, valid_unqualified_name
 from schema.model import (
     ST_ARRAY,
     ST_BOOL,
@@ -30,28 +31,6 @@ from schema.model import (
 )
 
 
-def _is_name_start(c: Int) -> Bool:
-    return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95
-
-
-def _is_name_part(c: Int) -> Bool:
-    return _is_name_start(c) or (c >= 48 and c <= 57)
-
-
-def _valid_name(s: String) -> Bool:
-    if s.byte_length() == 0:
-        return False
-    var b = s.as_bytes()
-    if not _is_name_start(Int(b[0])):
-        return False
-    var i = 1
-    while i < len(b):
-        if not _is_name_part(Int(b[i])):
-            return False
-        i += 1
-    return True
-
-
 def _prim_kind(name: String) -> Int:
     if name == "null":
         return ST_NULL
@@ -70,39 +49,6 @@ def _prim_kind(name: String) -> Int:
     if name == "string":
         return ST_STRING
     return -1
-
-
-def _fullname(name: String, ns: String) -> String:
-    var b = name.as_bytes()
-    var i = 0
-    while i < len(b):
-        if Int(b[i]) == 46:
-            return name
-        i += 1
-    if ns.byte_length() == 0:
-        return name
-    return ns + "." + name
-
-
-def _namespace_of(full: String) -> String:
-    var b = full.as_bytes()
-    var last = -1
-    var i = 0
-    while i < len(b):
-        if Int(b[i]) == 46:
-            last = i
-        i += 1
-    if last < 0:
-        return String()
-    var out = List[Byte]()
-    var j = 0
-    while j < last:
-        out.append(b[j])
-        j += 1
-    try:
-        return String(from_utf8=out)
-    except _:
-        return String()
 
 
 def parse_schema(
@@ -124,12 +70,16 @@ def _named(mut pool: SchemaPool, name: String, ns: String) raises SchemaError ->
         var n = SchemaNode()
         n.kind = pk
         return pool.add(n)
-    var full = _fullname(name, ns)
+    var full = fullname_of(name, ns)
     var existing = pool.find_name(full)
     if existing < 0:
         existing = pool.find_name(name)
     if existing < 0:
-        raise SchemaError("unknown type: " + name)
+        var stub = SchemaNode()
+        stub.kind = ST_RECORD
+        stub.name = full
+        stub.namespace = namespace_of(full)
+        existing = pool.add(stub)
     var r = SchemaNode()
     r.kind = ST_REF
     r.ref_id = existing
@@ -212,13 +162,27 @@ def _record(
         raise SchemaError("record missing name")
     var raw = doc.as_string(name_id)
     var dns = _decl_ns(doc, id, ns)
-    var full = _fullname(raw, dns)
+    var full = fullname_of(raw, dns)
     var node = SchemaNode()
     node.kind = ST_RECORD
     node.name = full
-    node.namespace = _namespace_of(full)
+    node.namespace = namespace_of(full)
     var rec_ns = node.namespace
-    var self_id = pool.add(node)
+    var existing = pool.find_name(full)
+    var self_id: Int
+    if existing >= 0:
+        self_id = existing
+        pool.nodes[self_id].kind = ST_RECORD
+        pool.nodes[self_id].name = full
+        pool.nodes[self_id].namespace = rec_ns
+    else:
+        self_id = pool.add(node)
+    var al = doc.find(id, String("aliases"))
+    if al >= 0 and doc.kind(al) == JSON_ARRAY:
+        var ai = 0
+        while ai < doc.nodes[al].count:
+            pool.add_alias(self_id, doc.as_string(doc.child(al, ai)))
+            ai += 1
     var fields_id = doc.find(id, String("fields"))
     if fields_id < 0 or doc.kind(fields_id) != JSON_ARRAY:
         raise SchemaError("record missing fields")
@@ -240,6 +204,13 @@ def _record(
         if def_id >= 0:
             has_def = True
             defj = emit_json(doc, def_id)
+            if pool.kind_of(ftid) == ST_UNION:
+                var u = pool.resolve(ftid)
+                var b0 = pool.kind_of(
+                    pool.branch_id[pool.nodes[u].branch_start]
+                )
+                if b0 == ST_NULL and defj != "null":
+                    raise SchemaError("union default must match first branch")
         pool.add_field(self_id, fname, ftid, has_def, defj)
         i += 1
     return self_id
@@ -254,8 +225,8 @@ def _enum(
     var dns = _decl_ns(doc, id, ns)
     var node = SchemaNode()
     node.kind = ST_ENUM
-    node.name = _fullname(doc.as_string(name_id), dns)
-    node.namespace = _namespace_of(node.name)
+    node.name = fullname_of(doc.as_string(name_id), dns)
+    node.namespace = namespace_of(node.name)
     var eid = pool.add(node)
     var syms = doc.find(id, String("symbols"))
     if syms < 0 or doc.kind(syms) != JSON_ARRAY:
@@ -305,8 +276,8 @@ def _fixed(
     var dns = _decl_ns(doc, id, ns)
     var node = SchemaNode()
     node.kind = ST_FIXED
-    node.name = _fullname(doc.as_string(name_id), dns)
-    node.namespace = _namespace_of(node.name)
+    node.name = fullname_of(doc.as_string(name_id), dns)
+    node.namespace = namespace_of(node.name)
     node.size = Int(doc.as_int(size_id))
     return pool.add(node)
 
@@ -319,5 +290,41 @@ def parse_avsc(text: String) raises SchemaError -> SchemaPool:
         raise SchemaError("invalid JSON schema")
     var pool = SchemaPool()
     pool.original_json = text
-    pool.root = parse_schema(pool, doc, doc.root, String())
+    if doc.kind(doc.root) == JSON_ARRAY:
+        var n = doc.nodes[doc.root].count
+        if n == 0:
+            raise SchemaError("empty schema array")
+        if _array_is_decls(doc, doc.root):
+            var i = 0
+            var first = -1
+            while i < n:
+                var sid = parse_schema(pool, doc, doc.child(doc.root, i), String())
+                if first < 0:
+                    first = sid
+                i += 1
+            pool.root = first
+        else:
+            pool.root = parse_schema(pool, doc, doc.root, String())
+    else:
+        pool.root = parse_schema(pool, doc, doc.root, String())
     return pool^
+
+
+def _array_is_decls(doc: JsonDoc, id: Int) -> Bool:
+    """True when the array is a list of named type declarations, not a union."""
+    var n = doc.nodes[id].count
+    if n == 0:
+        return False
+    var i = 0
+    while i < n:
+        var c = doc.child(id, i)
+        if doc.kind(c) != JSON_OBJECT:
+            return False
+        var t = doc.find(c, String("type"))
+        if t < 0 or doc.kind(t) != JSON_STRING:
+            return False
+        var tn = doc.as_string(t)
+        if tn != "record" and tn != "enum" and tn != "fixed" and tn != "error":
+            return False
+        i += 1
+    return True

@@ -134,16 +134,16 @@ struct _Parser(Movable):
                 raise JsonError("bad unicode", self.pos)
             var c = self._byte(self.pos)
             self.pos += 1
-            var d = 0
+            var digit: Int
             if c >= 48 and c <= 57:
-                d = c - 48
+                digit = c - 48
             elif c >= 97 and c <= 102:
-                d = c - 87
+                digit = c - 87
             elif c >= 65 and c <= 70:
-                d = c - 55
+                digit = c - 55
             else:
                 raise JsonError("bad unicode", self.pos)
-            v = (v << 4) + d
+            v = (v << 4) + digit
             i += 1
         return v
 
@@ -209,7 +209,7 @@ struct _Parser(Movable):
                 if not any_e:
                     raise JsonError("bad number", start)
         var slice = self.text.as_bytes()[start : self.pos]
-        var token = String()
+        var token: String
         try:
             token = String(from_utf8=slice)
         except _:

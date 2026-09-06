@@ -3,6 +3,8 @@ from std.os.process import Process
 from std.sys import argv
 
 from codegen.emit import emit_records
+from schema.model import SchemaPool
+from schema.parse_avdl import parse_avdl
 from schema.parse_avsc import parse_avsc
 
 
@@ -58,6 +60,7 @@ def main() raises:
     var args = argv()
     var out_dir = String()
     var schema_path = String()
+    var idl_path = String()
     var i = 1
     while i < len(args):
         if args[i] == "--out" and i + 1 < len(args):
@@ -66,18 +69,26 @@ def main() raises:
         elif args[i] == "--schema" and i + 1 < len(args):
             i += 1
             schema_path = String(args[i])
+        elif args[i] == "--idl" and i + 1 < len(args):
+            i += 1
+            idl_path = String(args[i])
         elif args[i] == "--help" or args[i] == "-h":
             print(_usage())
             return
-        elif args[i] == "--idl":
-            print("IDL: parse_avdl not wired in this build; use --schema")
-            return
         i += 1
-    if out_dir.byte_length() == 0 or schema_path.byte_length() == 0:
+    if out_dir.byte_length() == 0 or (
+        schema_path.byte_length() == 0 and idl_path.byte_length() == 0
+    ):
         print(_usage())
         return
-    var text = _read_text(schema_path)
-    var pool = parse_avsc(text)
+    var text: String
+    var pool: SchemaPool
+    if idl_path.byte_length() > 0:
+        text = _read_text(idl_path)
+        pool = parse_avdl(text)
+    else:
+        text = _read_text(schema_path)
+        pool = parse_avsc(text)
     var files = emit_records(pool, out_dir)
     var fi = 0
     while fi < len(files):
