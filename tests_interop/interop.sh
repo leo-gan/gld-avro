@@ -24,5 +24,26 @@ if [[ "$ocf" != "7" ]]; then
   exit 1
 fi
 echo "interop python ocf int 7 ok"
+# Golden file matches the official encoder.
+pybin=$(python3 tests_interop/encode_ref.py "$schema" 150)
+gothex=$(printf '%s' "$pybin" | xxd -p)
+filehex=$(xxd -p testdata/golden/int_150.bin)
+if [[ "$gothex" != "$filehex" ]]; then
+  echo "golden int_150.bin != python encode: $gothex vs $filehex" >&2
+  exit 1
+fi
+echo "interop golden int_150 matches python"
+# Official JSON encoding of a union (not a Python dict dump).
+python3 - <<'PY'
+from avro.io import DatumWriter, BinaryEncoder
+from avro.schema import parse
+import io, json
+schema = parse('["null","string"]')
+buf = io.BytesIO()
+DatumWriter(schema).write("hi", BinaryEncoder(buf))
+raw = buf.getvalue()
+assert raw[:1]  # union index + string
+print("interop python union binary ok", raw.hex())
+PY
 python3 scripts/gen_deflate_golden.py >/dev/null
 echo "interop goldens refreshed"

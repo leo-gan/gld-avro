@@ -1,7 +1,13 @@
 from runtime.box import Box
 from runtime.datum import AvroDatum, convert_to, decode, decode_resolving, encode
 from runtime.error import DecodeError
-from runtime.generic import GenericDatum
+from runtime.generic import (
+    GenericArray,
+    GenericDatum,
+    GenericMap,
+    GenericRecord,
+    GenericUnion,
+)
 from runtime.json_codec import (
     decode_default,
     decode_json,
@@ -9,7 +15,7 @@ from runtime.json_codec import (
     encode_json,
     encode_json_generic,
 )
-from runtime.ocf import OcfReader, OcfWriter, read_ocf, write_ocf
+from runtime.ocf import OcfReader, OcfWriter, open_ocf, read_ocf, write_ocf
 from runtime.resolve import can_resolve, compile_plan, named_match
 from runtime.soe import decode_single_object, encode_single_object, soe_fingerprint
 from schema.canonical import canonical_form

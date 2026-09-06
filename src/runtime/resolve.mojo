@@ -40,22 +40,107 @@ from schema.names import unqualified_name
 from wire.reader import WireReader
 
 
+comptime ACT_COPY = 0
+comptime ACT_PROMOTE = 1
+comptime ACT_REINTERPRET = 2
+comptime ACT_RECORD = 3
+comptime ACT_SKIP = 4
+comptime ACT_DEFAULT = 5
+comptime ACT_UNION = 6
+
+
 struct ResolvePlan(Movable):
-    """Compiled writer→reader check. Decode walks both schemas with this plan."""
+    """Compiled writer→reader actions. Decode walks both schemas with this plan."""
 
     var valid: Bool
+    var actions: List[Int]
+    var writer_ids: List[Int]
+    var reader_ids: List[Int]
 
     def __init__(out self):
         self.valid = False
+        self.actions = List[Int]()
+        self.writer_ids = List[Int]()
+        self.reader_ids = List[Int]()
 
     def __init__(out self, valid: Bool):
         self.valid = valid
+        self.actions = List[Int]()
+        self.writer_ids = List[Int]()
+        self.reader_ids = List[Int]()
+
+    def add(mut self, act: Int, wid: Int, rid: Int):
+        self.actions.append(act)
+        self.writer_ids.append(wid)
+        self.reader_ids.append(rid)
 
 
 def compile_plan(wpool: SchemaPool, rpool: SchemaPool) raises DecodeError -> ResolvePlan:
     if not can_resolve(wpool, wpool.root, rpool, rpool.root):
         raise DecodeError(DecodeError.KIND_RESOLVE, 0)
-    return ResolvePlan(True)
+    var plan = ResolvePlan(True)
+    _fill_plan(plan, wpool, wpool.root, rpool, rpool.root)
+    return plan^
+
+
+def _fill_plan(
+    mut plan: ResolvePlan, wpool: SchemaPool, wid0: Int, rpool: SchemaPool, rid0: Int
+):
+    var w = wpool.resolve(wid0)
+    var r = rpool.resolve(rid0)
+    var wk = wpool.nodes[w].kind
+    var rk = rpool.nodes[r].kind
+    if wk == rk and (
+        wk == ST_NULL
+        or wk == ST_BOOL
+        or wk == ST_INT
+        or wk == ST_LONG
+        or wk == ST_FLOAT
+        or wk == ST_DOUBLE
+        or wk == ST_STRING
+        or wk == ST_BYTES
+        or wk == ST_FIXED
+        or wk == ST_ENUM
+    ):
+        plan.add(ACT_COPY, w, r)
+        return
+    if promote_ok(wk, rk) and wk != rk:
+        plan.add(ACT_PROMOTE, w, r)
+        return
+    if (wk == ST_STRING and rk == ST_BYTES) or (wk == ST_BYTES and rk == ST_STRING):
+        plan.add(ACT_REINTERPRET, w, r)
+        return
+    if wk == ST_RECORD and rk == ST_RECORD:
+        plan.add(ACT_RECORD, w, r)
+        var wfs = wpool.nodes[w].field_start
+        var wfc = wpool.nodes[w].field_count
+        var i = 0
+        while i < wfc:
+            var name = wpool.field_name[wfs + i]
+            var rf = 0
+            var found = -1
+            var rfs = rpool.nodes[r].field_start
+            while rf < rpool.nodes[r].field_count:
+                if rpool.field_name[rfs + rf] == name:
+                    found = rf
+                    break
+                rf += 1
+            if found < 0:
+                plan.add(ACT_SKIP, wpool.field_type[wfs + i], -1)
+            else:
+                _fill_plan(
+                    plan,
+                    wpool,
+                    wpool.field_type[wfs + i],
+                    rpool,
+                    rpool.field_type[rfs + found],
+                )
+            i += 1
+        return
+    if wk == ST_UNION or rk == ST_UNION:
+        plan.add(ACT_UNION, w, r)
+        return
+    plan.add(ACT_COPY, w, r)
 
 
 def reader_aliases_match(

@@ -15,6 +15,7 @@ from schema.model import (
     ST_RECORD,
     ST_STRING,
     ST_UNION,
+    SchemaError,
     SchemaPool,
 )
 
@@ -41,7 +42,10 @@ def _type_name(pool: SchemaPool, sid: Int, cur: Int = -1) -> String:
     if k == ST_ENUM:
         return String("Int32")
     if k == ST_ARRAY:
-        return "List[" + _type_name(pool, pool.nodes[id].item_id, cur) + "]"
+        var item = pool.nodes[id].item_id
+        if _needs_box(pool, cur, item):
+            return "List[Box[" + _type_name(pool, item, cur) + "]]"
+        return "List[" + _type_name(pool, item, cur) + "]"
     if k == ST_UNION:
         return _union_mojo(pool, id, cur)
     return String("Int64")
@@ -154,7 +158,48 @@ def _union_mojo(pool: SchemaPool, uid: Int, cur: Int) -> String:
                     return "Optional[Box[" + tn + "]]"
                 return "Optional[" + tn + "]"
             i += 1
-    return String("Int64")
+    return _tagged_type_name(pool, cur, uid)
+
+
+def _is_tagged_union(pool: SchemaPool, sid: Int) -> Bool:
+    var id = pool.resolve(sid)
+    return pool.nodes[id].kind == ST_UNION and not _is_nullable(pool, id)
+
+
+def _tagged_type_name(pool: SchemaPool, cur: Int, uid: Int) -> String:
+    if cur < 0:
+        return String("Int64")
+    return _short(pool.nodes[cur].name) + "U" + String(uid)
+
+
+def _first_non_rec_branch(pool: SchemaPool, cur: Int, uid: Int) -> Int:
+    var bs = pool.nodes[uid].branch_start
+    var i = 0
+    while i < pool.nodes[uid].branch_count:
+        var bid = pool.branch_id[bs + i]
+        var inner = pool.resolve(bid)
+        if not (
+            pool.nodes[inner].kind == ST_RECORD and cur >= 0 and _same_scc(pool, cur, inner)
+        ):
+            return i
+        i += 1
+    return -1
+
+
+def _branch_field(pool: SchemaPool, bid: Int) -> String:
+    var id = pool.resolve(bid)
+    var k = pool.nodes[id].kind
+    if k == ST_RECORD:
+        return "as_" + _short(pool.nodes[id].name)
+    if k == ST_STRING:
+        return String("as_string")
+    if k == ST_INT:
+        return String("as_int")
+    if k == ST_LONG:
+        return String("as_long")
+    if k == ST_BOOL:
+        return String("as_bool")
+    return "as_b" + String(id)
 
 
 def _zero(pool: SchemaPool, sid: Int) -> String:
@@ -177,6 +222,8 @@ def _zero(pool: SchemaPool, sid: Int) -> String:
         return String("List[Byte]()") if (k == ST_BYTES or k == ST_FIXED) else String("List[]()")
     if k == ST_RECORD:
         return _type_name(pool, sid) + "()"
+    if _is_tagged_union(pool, sid):
+        return _type_name(pool, sid) + "()"
     return String("0")
 
 
@@ -197,6 +244,8 @@ def _enc_stmt(pool: SchemaPool, sid: Int, expr: String, cur: Int = -1) -> String
     if k == ST_BYTES:
         return "        enc.write_bytes(" + expr + ")\n"
     if k == ST_RECORD:
+        return "        " + expr + ".encode_to(enc)\n"
+    if _is_tagged_union(pool, sid):
         return "        " + expr + ".encode_to(enc)\n"
     if _is_nullable(pool, sid):
         var bs = pool.nodes[pool.resolve(sid)].branch_start
@@ -249,6 +298,16 @@ def _dec_stmt(pool: SchemaPool, sid: Int, lhs: String, cur: Int = -1) -> String:
             + lhs
             + ".decode_from(dec)\n"
         )
+    if _is_tagged_union(pool, sid):
+        return (
+            "        "
+            + lhs
+            + " = "
+            + _type_name(pool, sid, cur)
+            + "()\n        "
+            + lhs
+            + ".decode_from(dec)\n"
+        )
     if _is_nullable(pool, sid):
         var bs = pool.nodes[pool.resolve(sid)].branch_start
         var null_first = pool.kind_of(pool.branch_id[bs]) == ST_NULL
@@ -278,22 +337,121 @@ def _dec_stmt(pool: SchemaPool, sid: Int, lhs: String, cur: Int = -1) -> String:
     return "        # unsupported decode\n"
 
 
-def emit_one_record(pool: SchemaPool, rid: Int) -> String:
+def emit_tagged_union(pool: SchemaPool, rid: Int, uid: Int) raises SchemaError -> String:
+    var tname = _tagged_type_name(pool, rid, uid)
+    var first = _first_non_rec_branch(pool, rid, uid)
+    if first < 0:
+        raise SchemaError("tagged union every branch is recursive")
+    var s = String("struct ") + tname + "(Copyable, Movable, Defaultable, Deinitable):\n"
+    s += "    var branch: Int64\n"
+    var bs = pool.nodes[uid].branch_start
+    var bc = pool.nodes[uid].branch_count
+    var i = 0
+    while i < bc:
+        var bid = pool.branch_id[bs + i]
+        var inner = pool.resolve(bid)
+        var fname = _branch_field(pool, bid)
+        if pool.nodes[inner].kind == ST_RECORD and _same_scc(pool, rid, inner):
+            s += "    var " + fname + ": Optional[Box[" + _short(pool.nodes[inner].name) + "]]\n"
+        else:
+            s += "    var " + fname + ": " + _type_name(pool, bid, rid) + "\n"
+        i += 1
+    s += "\n    def __init__(out self):\n"
+    s += "        self.branch = Int64(" + String(first) + ")\n"
+    i = 0
+    while i < bc:
+        var bid = pool.branch_id[bs + i]
+        var inner = pool.resolve(bid)
+        var fname = _branch_field(pool, bid)
+        if pool.nodes[inner].kind == ST_RECORD and _same_scc(pool, rid, inner):
+            s += "        self." + fname + " = None\n"
+        else:
+            s += "        self." + fname + " = " + _zero(pool, bid) + "\n"
+        i += 1
+    s += "\n    def encode_to(self, mut enc: WireWriter):\n"
+    s += "        enc.write_long(self.branch)\n"
+    i = 0
+    while i < bc:
+        var bid = pool.branch_id[bs + i]
+        var inner = pool.resolve(bid)
+        var fname = _branch_field(pool, bid)
+        s += "        if self.branch == Int64(" + String(i) + "):\n"
+        if pool.nodes[inner].kind == ST_RECORD and _same_scc(pool, rid, inner):
+            s += "            self." + fname + ".value()[].encode_to(enc)\n"
+        elif pool.nodes[inner].kind == ST_RECORD:
+            s += "            self." + fname + ".encode_to(enc)\n"
+        else:
+            s += "    " + _enc_stmt(pool, bid, "self." + fname, rid)
+        i += 1
+    s += "\n    def decode_from[origin: ImmOrigin](mut self, mut dec: WireReader[origin]) raises DecodeError:\n"
+    s += "        self.branch = dec.read_long()\n"
+    i = 0
+    while i < bc:
+        var bid = pool.branch_id[bs + i]
+        var inner = pool.resolve(bid)
+        var fname = _branch_field(pool, bid)
+        s += "        if self.branch == Int64(" + String(i) + "):\n"
+        if pool.nodes[inner].kind == ST_RECORD:
+            s += "            var _tmp = " + _short(pool.nodes[inner].name) + "()\n"
+            s += "            _tmp.decode_from(dec)\n"
+            if _same_scc(pool, rid, inner):
+                s += "            self." + fname + " = Box(_tmp)\n"
+            else:
+                s += "            self." + fname + " = _tmp\n"
+        else:
+            s += "    " + _dec_stmt(pool, bid, "self." + fname, rid)
+        i += 1
+    s += "\n\n"
+    return s
+
+
+def emit_one_record(pool: SchemaPool, rid: Int) raises SchemaError -> String:
     var name = _short(pool.nodes[rid].name)
-    var s = String("from std.collections import List, Optional, Span\n")
-    s += "from avro import AvroDatum, Box, DecodeError, WireReader, WireWriter\n\n\n"
-    s += "struct " + name + "(Copyable, Movable, Defaultable, Deinitable, AvroDatum):\n"
     var fs = pool.nodes[rid].field_start
     var fc = pool.nodes[rid].field_count
     var i = 0
+    while i < fc:
+        var ftid = pool.field_type[fs + i]
+        if (
+            pool.kind_of(ftid) == ST_RECORD
+            and _same_scc(pool, rid, pool.resolve(ftid))
+        ):
+            raise SchemaError("non-optional recursive field " + pool.field_name[fs + i])
+        i += 1
+    var extras = String()
+    i = 0
+    while i < fc:
+        var ftid = pool.field_type[fs + i]
+        if _is_tagged_union(pool, ftid):
+            extras += emit_tagged_union(pool, rid, pool.resolve(ftid))
+        i += 1
+    var s = String("from std.collections import List, Optional, Span\n")
+    s += "from avro import AvroDatum, Box, DecodeError, WireReader, WireWriter\n\n\n"
+    s += extras
+    s += "struct " + name + "(Copyable, Movable, Defaultable, Deinitable, AvroDatum):\n"
+    i = 0
     while i < fc:
         s += "    var " + pool.field_name[fs + i] + ": " + _type_name(pool, pool.field_type[fs + i], rid) + "\n"
         i += 1
     s += "\n    def __init__(out self):\n"
     i = 0
     while i < fc:
-        s += "        self." + pool.field_name[fs + i] + " = " + _zero(pool, pool.field_type[fs + i]) + "\n"
+        var z = _zero(pool, pool.field_type[fs + i])
+        if _is_tagged_union(pool, pool.field_type[fs + i]):
+            z = _type_name(pool, pool.field_type[fs + i], rid) + "()"
+        s += "        self." + pool.field_name[fs + i] + " = " + z + "\n"
         i += 1
+    if fc > 0:
+        s += "\n    def __init__(out self"
+        i = 0
+        while i < fc:
+            s += ", " + pool.field_name[fs + i] + ": " + _type_name(pool, pool.field_type[fs + i], rid)
+            i += 1
+        s += "):\n"
+        i = 0
+        while i < fc:
+            s += "        self." + pool.field_name[fs + i] + " = " + pool.field_name[fs + i] + "\n"
+            i += 1
     s += "\n    def schema_json(self) -> String:\n"
     s += "        return String(" + _quote(pool.original_json) + ")\n\n"
     s += "    def encoded_len(self) -> Int:\n        return 64\n\n"
@@ -314,7 +472,7 @@ def _quote(s: String) -> String:
     return "\"\"\"" + s + "\"\"\""
 
 
-def emit_records(pool: SchemaPool, out_dir: String) -> List[String]:
+def emit_records(pool: SchemaPool, out_dir: String) raises SchemaError -> List[String]:
     var files = List[String]()
     var i = 0
     while i < len(pool.nodes):

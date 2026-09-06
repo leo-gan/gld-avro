@@ -46,5 +46,20 @@ def test_string_and_null_union() raises:
     assert_equal(g.nodes[g.refs[g.nodes[g.root].first]].i, Int64(0))
 
 
+def test_record_view() raises:
+    var schema = String(
+        '{"type":"record","name":"M","fields":[{"name":"x","type":"int"}]}'
+    )
+    var g = GenericDatum(parse_avsc(schema))
+    var enc = WireWriter()
+    enc.write_int(Int32(7))
+    g.decode(enc^.finish())
+    var rec = g.as_record()
+    assert_equal(g.field_count(rec), 1)
+    assert_equal(g.field_name(rec, 0), String("x"))
+    var cid = g.get_field(rec, String("x"))
+    assert_equal(g.child_int(cid), Int64(7))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

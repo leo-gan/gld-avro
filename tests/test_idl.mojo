@@ -1,6 +1,6 @@
 from std.testing import TestSuite, assert_equal, assert_true
 
-from schema.model import ST_RECORD
+from schema.model import ST_RECORD, ST_UNION
 from schema.parse_avdl import parse_avdl
 
 
@@ -14,6 +14,17 @@ def test_parse_avdl_record() raises:
     assert_true(p.find_name(String("benchmark.v2.Message")) >= 0)
     assert_equal(p.nodes[p.root].field_count, 5)
     assert_equal(p.field_name[p.nodes[p.root].field_start], String("f_bool"))
+
+
+def test_parse_avdl_longlist_nullable() raises:
+    var f = open("testdata/avdl/longlist.avdl", "r")
+    var text = String(f.read())
+    f.close()
+    var p = parse_avdl(text)
+    assert_true(p.find_name(String("LongList")) >= 0)
+    var fs = p.nodes[p.root].field_start
+    assert_equal(p.field_name[fs + 1], String("next"))
+    assert_equal(p.kind_of(p.field_type[fs + 1]), ST_UNION)
 
 
 def main() raises:

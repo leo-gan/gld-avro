@@ -1,0 +1,4 @@
+record LongList {
+  long value;
+  LongList? next;
+}

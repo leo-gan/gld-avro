@@ -32,5 +32,24 @@ def test_ocf_roundtrip() raises:
     assert_equal(back[0].f_int32, Int32(150))
 
 
+def test_open_ocf_reader() raises:
+    from runtime.ocf import open_ocf
+    from schema.parse_avsc import parse_avsc
+
+    var m = Message()
+    m.f_int32 = 3
+    var payload = encode(m)
+    var objs = List[List[Byte]]()
+    objs.append(payload^)
+    var file = write_ocf(m.schema_json(), objs^, 0)
+    var r = open_ocf(file)
+    var reader = parse_avsc(m.schema_json())
+    var g = r.read_next_generic(reader^)
+    var ok = False
+    if g:
+        ok = True
+    assert_true(ok)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

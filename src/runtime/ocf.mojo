@@ -5,6 +5,7 @@ from deflate.inflate import inflate_raw
 from runtime.datum import AvroDatum, convert_to, encode
 from runtime.error import DecodeError
 from runtime.generic import GenericDatum
+from runtime.resolve import decode_resolving_generic
 from schema.model import SchemaPool
 from schema.parse_avsc import parse_avsc
 from wire.reader import WireReader
@@ -148,24 +149,110 @@ struct OcfWriter(Movable):
 
 
 struct OcfReader(Movable):
+    var schema_json: String
     var writer_schema: SchemaPool
     var codec: Int
     var sync: List[Byte]
-    var payload: List[Byte]
-    var pos: Int
+    var rest: List[Byte]
+    var rest_pos: Int
+    var block: List[Byte]
+    var block_off: Int
+    var block_left: Int64
 
     def __init__(out self, var writer_schema: SchemaPool, codec: Int, var sync: List[Byte]):
+        self.schema_json = writer_schema.original_json
         self.writer_schema = writer_schema^
         self.codec = codec
         self.sync = sync^
-        self.payload = List[Byte]()
-        self.pos = 0
+        self.rest = List[Byte]()
+        self.rest_pos = 0
+        self.block = List[Byte]()
+        self.block_off = 0
+        self.block_left = 0
 
     def read_next_generic(
         mut self, var reader_schema: SchemaPool
     ) raises DecodeError -> Optional[GenericDatum]:
-        _ = reader_schema^
-        if self.pos >= len(self.payload):
-            return Optional[GenericDatum](None)
-        self.pos = len(self.payload)
-        return Optional[GenericDatum](None)
+        if self.block_left <= 0:
+            if not self._load_block():
+                _ = reader_schema^
+                return Optional[GenericDatum](None)
+        var slice = List[Byte]()
+        var i = self.block_off
+        while i < len(self.block):
+            slice.append(self.block[i])
+            i += 1
+        var writer: SchemaPool
+        try:
+            writer = parse_avsc(self.schema_json)
+        except _:
+            raise DecodeError(DecodeError.KIND_OCF, 0)
+        var g = decode_resolving_generic(slice, writer^, reader_schema^)
+        var consumed = WireReader(slice)
+        var skip: SchemaPool
+        try:
+            skip = parse_avsc(self.schema_json)
+        except _:
+            raise DecodeError(DecodeError.KIND_OCF, 0)
+        var tmp = GenericDatum(skip^)
+        tmp.root = tmp._dec(consumed, tmp.pool.root)
+        self.block_off += consumed.pos
+        self.block_left -= 1
+        return Optional[GenericDatum](g^)
+
+    def _load_block(mut self) raises DecodeError -> Bool:
+        if self.rest_pos >= len(self.rest):
+            return False
+        var dec = WireReader(self.rest)
+        dec.pos = self.rest_pos
+        var count = dec.read_long()
+        var size = dec.read_long()
+        var payload = dec.read_fixed(Int(size))
+        if self.codec == 1:
+            payload = inflate_raw(payload)
+        _ = dec.read_fixed(16)
+        self.rest_pos = dec.pos
+        self.block = payload^
+        self.block_off = 0
+        self.block_left = count
+        return count > 0
+
+
+def open_ocf[origin: ImmOrigin](buf: Span[Byte, origin]) raises DecodeError -> OcfReader:
+    var dec = WireReader[origin](buf)
+    if dec.remaining() < 4:
+        raise DecodeError(DecodeError.KIND_OCF, 0)
+    if Int(buf[0]) != 0x4F or Int(buf[1]) != 0x62 or Int(buf[2]) != 0x6A or Int(buf[3]) != 0x01:
+        raise DecodeError(DecodeError.KIND_OCF, 0)
+    dec.pos = 4
+    var schema_json = String()
+    var codec = 0
+    while True:
+        var count, _h = dec.read_block_count()
+        if count == 0:
+            break
+        var j = Int64(0)
+        while j < count:
+            var key = dec.read_string()
+            var val = dec.read_string()
+            if key == "avro.schema":
+                schema_json = val
+            if key == "avro.codec":
+                if val == "deflate":
+                    codec = 1
+                elif val != "null":
+                    raise DecodeError(DecodeError.KIND_OCF, dec.position())
+            j += 1
+    var sync = dec.read_fixed(16)
+    var pool: SchemaPool
+    try:
+        pool = parse_avsc(schema_json)
+    except _:
+        raise DecodeError(DecodeError.KIND_OCF, dec.position())
+    var r = OcfReader(pool^, codec, sync^)
+    r.schema_json = schema_json
+    var i = dec.pos
+    while i < len(buf):
+        r.rest.append(buf[i])
+        i += 1
+    return r^

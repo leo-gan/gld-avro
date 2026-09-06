@@ -72,5 +72,14 @@ def test_decode_int_to_long() raises:
     assert_true(g.nodes[g.root].i == Int64(150))
 
 
+def test_compile_plan_promote() raises:
+    from runtime.resolve import ACT_PROMOTE, compile_plan
+
+    var plan = compile_plan(parse_avsc(String('"int"')), parse_avsc(String('"long"')))
+    assert_true(plan.valid)
+    assert_true(len(plan.actions) >= 1)
+    assert_true(plan.actions[0] == ACT_PROMOTE)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
