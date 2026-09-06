@@ -78,6 +78,8 @@ struct SchemaPool(Movable):
     var leftover_owner: List[Int]
     var leftover_key: List[String]
     var leftover_val: List[String]
+    var alias_owner: List[Int]
+    var alias_name: List[String]
     var root: Int
     var original_json: String
 
@@ -94,6 +96,8 @@ struct SchemaPool(Movable):
         self.leftover_owner = List[Int]()
         self.leftover_key = List[String]()
         self.leftover_val = List[String]()
+        self.alias_owner = List[Int]()
+        self.alias_name = List[String]()
         self.root = -1
         self.original_json = String()
 
@@ -144,4 +148,8 @@ struct SchemaPool(Movable):
             self.nodes[owner].symbol_start = len(self.symbol)
         self.symbol.append(sym)
         self.nodes[owner].symbol_count += 1
+
+    def add_alias(mut self, owner: Int, name: String):
+        self.alias_owner.append(owner)
+        self.alias_name.append(name)
 

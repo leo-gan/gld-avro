@@ -35,6 +35,16 @@ var m2 = decode[Message](buf)
 `from avro import …` resolves with `mojo run -I src` in a checkout, or from
 `avro.mojoc` after the package is installed.
 
+IDL:
+
+```bash
+pixi run mojo run -I src src/codegen/cli.mojo -- --idl testdata/avdl/message.avdl --out tests/generated
+```
+
+Resolution uses `decode_resolving[T](buf, writer_schema_json)`. Object Container
+Files use `write_ocf` / `read_ocf[T]`. Single-object frames use
+`encode_single_object`. Official Avro JSON uses `encode_json` / `decode_json`.
+
 ## Tests
 
 ```bash

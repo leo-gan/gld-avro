@@ -1,0 +1,36 @@
+from std.testing import TestSuite, assert_equal, assert_true
+
+from manual_types import Message
+from runtime.datum import encode
+from runtime.ocf import read_ocf, write_ocf
+from schema.parse_avsc import parse_avsc
+
+
+def test_write_ocf_magic() raises:
+    var m = Message()
+    m.f_int32 = 1
+    var payload = encode(m)
+    var objs = List[List[Byte]]()
+    objs.append(payload^)
+    var file = write_ocf(m.schema_json(), objs^, 0)
+    assert_true(len(file) >= 4)
+    assert_equal(Int(file[0]), 0x4F)
+    assert_equal(Int(file[1]), 0x62)
+    assert_equal(Int(file[2]), 0x6A)
+    assert_equal(Int(file[3]), 0x01)
+
+
+def test_ocf_roundtrip() raises:
+    var m = Message()
+    m.f_int32 = 150
+    var payload = encode(m)
+    var objs = List[List[Byte]]()
+    objs.append(payload^)
+    var file = write_ocf(m.schema_json(), objs^, 0)
+    var back = read_ocf[Message](file)
+    assert_equal(len(back), 1)
+    assert_equal(back[0].f_int32, Int32(150))
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -54,7 +54,7 @@ def _cf(pool: SchemaPool, sid: Int, mut seen: List[Int]) -> String:
     var id = pool.resolve(sid)
     var k = pool.nodes[id].kind
     if k == ST_NULL or k == ST_BOOL or k == ST_INT or k == ST_LONG or k == ST_FLOAT or k == ST_DOUBLE or k == ST_BYTES or k == ST_STRING:
-        return '"' + _prim(k) + '"' if False else _prim(k)
+        return _prim(k)
     if k == ST_UNION:
         var s = String("[")
         var i = 0
