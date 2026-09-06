@@ -45,5 +45,31 @@ raw = buf.getvalue()
 assert raw[:1]  # union index + string
 print("interop python union binary ok", raw.hex())
 PY
+# Mojo encoder → official Python decoder
+mojo_out=$(pixi run mojo run -I src -I tests tests_interop/encode_mojo.mojo)
+inthex=$(echo "$mojo_out" | awk '/^INT150 /{print $2}')
+if [[ "$inthex" != "ac02" ]]; then
+  echo "mojo encode int 150 unexpected: $inthex" >&2
+  exit 1
+fi
+echo "$inthex" | xxd -r -p | python3 tests_interop/decode_ref.py "$schema" | grep -qx 150
+echo "interop mojo→python int 150 ok"
+msghex=$(echo "$mojo_out" | awk '/^MSG /{print $2}')
+msgschema=$(python3 - <<'PY'
+from pathlib import Path
+print(Path("testdata/avsc/benchmark_v2.avsc").read_text().replace("\n",""))
+PY
+)
+echo "$msghex" | xxd -r -p | python3 tests_interop/decode_ref.py "$msgschema" >/dev/null
+echo "interop mojo→python Message ok"
+soe=$(echo "$mojo_out" | awk '/^SOE /{print $2}')
+if [[ "${soe:0:4}" != "c301" ]]; then
+  echo "mojo SOE header unexpected: $soe" >&2
+  exit 1
+fi
+echo "$soe" | xxd -r -p | tail -c +11 | python3 tests_interop/decode_ref.py "$msgschema" >/dev/null
+echo "interop mojo SOE→python payload ok"
+echo "$mojo_out" | grep -q '^JSON {'
+echo "interop mojo JSON encode present"
 python3 scripts/gen_deflate_golden.py >/dev/null
 echo "interop goldens refreshed"

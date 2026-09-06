@@ -1,0 +1,4 @@
+import schema "../avsc/leaf.avsc";
+record Wrap {
+  Leaf x;
+}

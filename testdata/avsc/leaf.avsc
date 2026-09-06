@@ -1,0 +1,1 @@
+{"type":"record","name":"Leaf","fields":[{"name":"n","type":"int"}]}
