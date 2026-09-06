@@ -1,0 +1,27 @@
+# Local notes and scratch; never commit.
+temp/
+
+# Pixi
+.pixi/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Mojo
+.mojo_cache/
+*.mojoc
+
+# MkDocs
+site/
+
+# rattler-build
+output/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

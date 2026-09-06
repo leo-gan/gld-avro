@@ -1,0 +1,10 @@
+@namespace("benchmark.v2")
+protocol Bench {
+  record Message {
+    boolean f_bool = false;
+    int f_int32 = 0;
+    long f_int64 = 0;
+    double f_float64 = 0;
+    string f_string = "";
+  }
+}

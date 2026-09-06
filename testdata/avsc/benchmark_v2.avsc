@@ -1,0 +1,15 @@
+{
+  "type": "record",
+  "name": "Message",
+  "namespace": "benchmark.v2",
+  "fields": [
+    {"name": "f_bool", "type": "boolean", "default": false},
+    {"name": "f_int32", "type": "int", "default": 0},
+    {"name": "f_int64", "type": "long", "default": 0},
+    {"name": "f_float64", "type": "double", "default": 0},
+    {"name": "f_string", "type": "string", "default": ""},
+    {"name": "f_bool_2", "type": "boolean", "default": false},
+    {"name": "f_int32_2", "type": "int", "default": 0},
+    {"name": "f_string_2", "type": "string", "default": ""}
+  ]
+}
