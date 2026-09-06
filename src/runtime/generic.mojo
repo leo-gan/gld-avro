@@ -291,3 +291,108 @@ struct GenericDatum(Movable):
             n.count = 1
             return self.add_node(n)
         raise DecodeError(DecodeError.KIND_SCHEMA, dec.position())
+
+    def is_null(self) -> Bool:
+        return self.root >= 0 and self.nodes[self.root].kind == AV_NULL
+
+    def as_int(self) raises DecodeError -> Int32:
+        if self.root < 0 or (
+            self.nodes[self.root].kind != AV_INT and self.nodes[self.root].kind != AV_LONG
+        ):
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        return Int32(self.nodes[self.root].i)
+
+    def as_long(self) raises DecodeError -> Int64:
+        if self.root < 0:
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        return self.nodes[self.root].i
+
+    def as_string(self) raises DecodeError -> String:
+        if self.root < 0 or self.nodes[self.root].kind != AV_STRING:
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        return self.nodes[self.root].s
+
+    def as_record(self) raises DecodeError -> GenericRecord:
+        if self.root < 0 or self.nodes[self.root].kind != AV_RECORD:
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        return GenericRecord(self.root)
+
+    def as_array(self) raises DecodeError -> GenericArray:
+        if self.root < 0 or self.nodes[self.root].kind != AV_ARRAY:
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        return GenericArray(self.root)
+
+    def as_map(self) raises DecodeError -> GenericMap:
+        if self.root < 0 or self.nodes[self.root].kind != AV_MAP:
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        return GenericMap(self.root)
+
+    def as_union(self) raises DecodeError -> GenericUnion:
+        if self.root < 0 or self.nodes[self.root].kind != AV_UNION:
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        return GenericUnion(self.root)
+
+    def field_count(self, rec: GenericRecord) -> Int:
+        return self.nodes[rec.node_index].count
+
+    def field_name(self, rec: GenericRecord, i: Int) raises DecodeError -> String:
+        var sid = self.pool.resolve(self.nodes[rec.node_index].schema_id)
+        if i < 0 or i >= self.pool.nodes[sid].field_count:
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        return self.pool.field_name[self.pool.nodes[sid].field_start + i]
+
+    def get_at(self, rec: GenericRecord, i: Int) raises DecodeError -> Int:
+        if i < 0 or i >= self.nodes[rec.node_index].count:
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        return self.refs[self.nodes[rec.node_index].first + i]
+
+    def get_field(self, rec: GenericRecord, name: String) raises DecodeError -> Int:
+        var n = self.field_count(rec)
+        var i = 0
+        while i < n:
+            if self.field_name(rec, i) == name:
+                return self.get_at(rec, i)
+            i += 1
+        raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+
+    def set_at(mut self, rec: GenericRecord, i: Int, child: Int) raises DecodeError:
+        if i < 0 or i >= self.nodes[rec.node_index].count:
+            raise DecodeError(DecodeError.KIND_SCHEMA, 0)
+        self.refs[self.nodes[rec.node_index].first + i] = child
+
+    def child_int(self, nid: Int) -> Int64:
+        return self.nodes[nid].i
+
+    def array_len(self, arr: GenericArray) -> Int:
+        return self.nodes[arr.node_index].count
+
+    def union_branch(self, u: GenericUnion) -> Int:
+        return Int(self.nodes[u.node_index].i)
+
+
+struct GenericRecord(Copyable, Movable, ImplicitlyCopyable):
+    var node_index: Int
+
+    def __init__(out self, node_index: Int):
+        self.node_index = node_index
+
+
+struct GenericArray(Copyable, Movable, ImplicitlyCopyable):
+    var node_index: Int
+
+    def __init__(out self, node_index: Int):
+        self.node_index = node_index
+
+
+struct GenericMap(Copyable, Movable, ImplicitlyCopyable):
+    var node_index: Int
+
+    def __init__(out self, node_index: Int):
+        self.node_index = node_index
+
+
+struct GenericUnion(Copyable, Movable, ImplicitlyCopyable):
+    var node_index: Int
+
+    def __init__(out self, node_index: Int):
+        self.node_index = node_index

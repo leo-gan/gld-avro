@@ -1,5 +1,5 @@
 from std.collections import List, Optional, Span
-from avro import AvroDatum, DecodeError, WireReader, WireWriter
+from avro import AvroDatum, Box, DecodeError, WireReader, WireWriter
 
 
 struct Message(Copyable, Movable, Defaultable, Deinitable, AvroDatum):
@@ -21,6 +21,16 @@ struct Message(Copyable, Movable, Defaultable, Deinitable, AvroDatum):
         self.f_bool_2 = False
         self.f_int32_2 = Int32(0)
         self.f_string_2 = String()
+
+    def __init__(out self, f_bool: Bool, f_int32: Int32, f_int64: Int64, f_float64: Float64, f_string: String, f_bool_2: Bool, f_int32_2: Int32, f_string_2: String):
+        self.f_bool = f_bool
+        self.f_int32 = f_int32
+        self.f_int64 = f_int64
+        self.f_float64 = f_float64
+        self.f_string = f_string
+        self.f_bool_2 = f_bool_2
+        self.f_int32_2 = f_int32_2
+        self.f_string_2 = f_string_2
 
     def schema_json(self) -> String:
         return String("""{
