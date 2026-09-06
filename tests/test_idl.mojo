@@ -27,5 +27,24 @@ def test_parse_avdl_longlist_nullable() raises:
     assert_equal(p.kind_of(p.field_type[fs + 1]), ST_UNION)
 
 
+def test_parse_avdl_enum_and_fixed() raises:
+    var f = open("testdata/avdl/enum_fixed.avdl", "r")
+    var text = String(f.read())
+    f.close()
+    var p = parse_avdl(text)
+    assert_true(p.find_name(String("Color")) >= 0)
+    assert_true(p.find_name(String("MD5")) >= 0)
+    assert_true(p.find_name(String("Tagged")) >= 0)
+
+
+def test_parse_avdl_import_schema() raises:
+    var f = open("testdata/avdl/uses_leaf.avdl", "r")
+    var text = String(f.read())
+    f.close()
+    var p = parse_avdl(text, String("testdata/avdl/uses_leaf.avdl"))
+    assert_true(p.find_name(String("Leaf")) >= 0)
+    assert_true(p.find_name(String("Wrap")) >= 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

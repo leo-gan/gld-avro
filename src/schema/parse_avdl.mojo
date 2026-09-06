@@ -67,6 +67,14 @@ def _idl_to_avsc(text: String) raises SchemaError -> String:
         elif kind == "enum":
             types.append(_convert_enum(text, kp, ns))
             pos = _after_block(text, _find_from(text, String("{"), kp))
+        elif kind == "fixed":
+            var fx = _convert_fixed(text, kp, ns)
+            types.append(fx)
+            var par = _find_from(text, String(")"), kp)
+            if par >= 0:
+                pos = par + 1
+            else:
+                pos = kp + kind.byte_length()
         else:
             pos = kp + kind.byte_length()
     if len(types) == 0:
@@ -168,6 +176,19 @@ def _convert_enum(text: String, pos: Int, ns: String) -> String:
         json += "\"" + sym + "\""
         i += sym.byte_length()
     json += "]}"
+    return json
+
+
+def _convert_fixed(text: String, pos: Int, ns: String) -> String:
+    var name = _ident_at(text, _skip_ws(text, pos + 5))
+    var par = _find_from(text, String("("), pos)
+    var size = String("0")
+    if par >= 0:
+        size = _until(text, par + 1, 41)
+    var json = String("{\"type\":\"fixed\",\"name\":\"") + name + "\""
+    if ns.byte_length() > 0:
+        json += ",\"namespace\":\"" + ns + "\""
+    json += ",\"size\":" + size + "}"
     return json
 
 
@@ -288,6 +309,7 @@ def _next_decl(text: String, start: Int) -> Int:
     keys.append(String("record "))
     keys.append(String("error "))
     keys.append(String("enum "))
+    keys.append(String("fixed "))
     var best = -1
     var i = 0
     while i < len(keys):
