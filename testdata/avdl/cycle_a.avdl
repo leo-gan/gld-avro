@@ -1,0 +1,4 @@
+import idl "cycle_b.avdl";
+record CycleA {
+  int x;
+}

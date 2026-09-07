@@ -45,6 +45,7 @@ struct SchemaNode(Copyable, Movable, Defaultable, Deinitable, ImplicitlyCopyable
     var branch_count: Int
     var symbol_start: Int
     var symbol_count: Int
+    var is_error: Bool
 
     def __init__(out self):
         self.kind = ST_NULL
@@ -63,6 +64,7 @@ struct SchemaNode(Copyable, Movable, Defaultable, Deinitable, ImplicitlyCopyable
         self.branch_count = 0
         self.symbol_start = 0
         self.symbol_count = 0
+        self.is_error = False
 
 
 struct SchemaPool(Movable):
@@ -152,4 +154,17 @@ struct SchemaPool(Movable):
     def add_alias(mut self, owner: Int, name: String):
         self.alias_owner.append(owner)
         self.alias_name.append(name)
+
+    def add_leftover(mut self, owner: Int, key: String, val: String):
+        self.leftover_owner.append(owner)
+        self.leftover_key.append(key)
+        self.leftover_val.append(val)
+
+    def leftover(self, owner: Int, key: String) -> String:
+        var i = 0
+        while i < len(self.leftover_owner):
+            if self.leftover_owner[i] == owner and self.leftover_key[i] == key:
+                return self.leftover_val[i]
+            i += 1
+        return String()
 

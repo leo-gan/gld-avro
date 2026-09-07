@@ -121,6 +121,46 @@ def _decl_ns(doc: JsonDoc, id: Int, outer: String) -> String:
     return outer
 
 
+def _known_object_key(tname: String, key: String) -> Bool:
+    if (
+        key == "type"
+        or key == "logicalType"
+        or key == "doc"
+        or key == "aliases"
+        or key == "namespace"
+        or key == "name"
+    ):
+        return True
+    if tname == "record" or tname == "error":
+        return key == "fields" or key == "order" or key == "default"
+    if tname == "enum":
+        return key == "symbols" or key == "default"
+    if tname == "fixed":
+        return key == "size"
+    if tname == "array":
+        return key == "items"
+    if tname == "map":
+        return key == "values"
+    return False
+
+
+def _apply_logical_and_leftovers(
+    mut pool: SchemaPool, doc: JsonDoc, obj: Int, nid: Int, tname: String
+):
+    var lt = doc.find(obj, String("logicalType"))
+    if lt >= 0 and doc.kind(lt) == JSON_STRING:
+        pool.nodes[nid].logical_type = doc.as_string(lt)
+    if doc.kind(obj) != JSON_OBJECT:
+        return
+    var n = doc.nodes[obj].count
+    var i = 0
+    while i < n:
+        var key = doc.obj_key(obj, i)
+        if not _known_object_key(tname, key):
+            pool.add_leftover(nid, key, emit_json(doc, doc.obj_val(obj, i)))
+        i += 1
+
+
 def _object(
     mut pool: SchemaPool, doc: JsonDoc, id: Int, ns: String
 ) raises SchemaError -> Int:
@@ -137,20 +177,31 @@ def _object(
     if pk >= 0:
         var n = SchemaNode()
         n.kind = pk
-        var lt = doc.find(id, String("logicalType"))
-        if lt >= 0 and doc.kind(lt) == JSON_STRING:
-            n.logical_type = doc.as_string(lt)
-        return pool.add(n)
-    if tname == "record":
-        return _record(pool, doc, id, ns)
+        var nid = pool.add(n)
+        _apply_logical_and_leftovers(pool, doc, id, nid, tname)
+        return nid
+    if tname == "record" or tname == "error":
+        var rid = _record(pool, doc, id, ns)
+        if tname == "error":
+            pool.nodes[rid].is_error = True
+        _apply_logical_and_leftovers(pool, doc, id, rid, tname)
+        return rid
     if tname == "enum":
-        return _enum(pool, doc, id, ns)
+        var eid = _enum(pool, doc, id, ns)
+        _apply_logical_and_leftovers(pool, doc, id, eid, tname)
+        return eid
     if tname == "array":
-        return _array(pool, doc, id, ns)
+        var aid = _array(pool, doc, id, ns)
+        _apply_logical_and_leftovers(pool, doc, id, aid, tname)
+        return aid
     if tname == "map":
-        return _map(pool, doc, id, ns)
+        var mid = _map(pool, doc, id, ns)
+        _apply_logical_and_leftovers(pool, doc, id, mid, tname)
+        return mid
     if tname == "fixed":
-        return _fixed(pool, doc, id, ns)
+        var fid = _fixed(pool, doc, id, ns)
+        _apply_logical_and_leftovers(pool, doc, id, fid, tname)
+        return fid
     return _named(pool, tname, ns)
 
 

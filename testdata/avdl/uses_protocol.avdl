@@ -1,0 +1,4 @@
+import protocol "../avpr/bench.avpr";
+record Holder {
+  Message m;
+}

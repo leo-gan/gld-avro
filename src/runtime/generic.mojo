@@ -1,6 +1,17 @@
 from std.collections import List, Span
 
 from runtime.error import DecodeError
+from runtime.logical import (
+    LT_DURATION,
+    LT_TIME_MICROS,
+    LT_TIME_MILLIS,
+    LT_UUID,
+    logical_kind,
+    logical_underlying_ok,
+    time_micros_valid,
+    time_millis_valid,
+    uuid_is_valid,
+)
 from schema.model import (
     ST_ARRAY,
     ST_BOOL,
@@ -192,11 +203,15 @@ struct GenericDatum(Movable):
         if k == ST_INT:
             n.kind = AV_INT
             n.i = Int64(dec.read_int())
-            return self.add_node(n)
+            var iid = self.add_node(n)
+            self._check_logical(sid2, iid, dec.position())
+            return iid
         if k == ST_LONG:
             n.kind = AV_LONG
             n.i = dec.read_long()
-            return self.add_node(n)
+            var lid = self.add_node(n)
+            self._check_logical(sid2, lid, dec.position())
+            return lid
         if k == ST_FLOAT:
             n.kind = AV_FLOAT
             n.i = Int64(UInt32(dec.read_float().to_bits()))
@@ -208,17 +223,23 @@ struct GenericDatum(Movable):
         if k == ST_STRING:
             n.kind = AV_STRING
             n.s = dec.read_string()
-            return self.add_node(n)
+            var sidn = self.add_node(n)
+            self._check_logical(sid2, sidn, dec.position())
+            return sidn
         if k == ST_BYTES:
             n.kind = AV_BYTES
             var b = dec.read_bytes()
             n.i = Int64(self.store_bytes(b))
-            return self.add_node(n)
+            var bid = self.add_node(n)
+            self._check_logical(sid2, bid, dec.position())
+            return bid
         if k == ST_FIXED:
             n.kind = AV_FIXED
             var b = dec.read_fixed(self.pool.nodes[sid2].size)
             n.i = Int64(self.store_bytes(b))
-            return self.add_node(n)
+            var fid = self.add_node(n)
+            self._check_logical(sid2, fid, dec.position())
+            return fid
         if k == ST_ENUM:
             n.kind = AV_ENUM
             var idx = Int(dec.read_int())
@@ -291,6 +312,32 @@ struct GenericDatum(Movable):
             n.count = 1
             return self.add_node(n)
         raise DecodeError(DecodeError.KIND_SCHEMA, dec.position())
+
+    def _check_logical(self, sid2: Int, nid: Int, offset: Int) raises DecodeError:
+        var lt = self.pool.nodes[sid2].logical_type
+        if lt.byte_length() == 0:
+            return
+        var kind = logical_kind(lt)
+        if not logical_underlying_ok(
+            self.pool.nodes[sid2].kind, self.pool.nodes[sid2].size, kind
+        ):
+            return
+        if kind == LT_UUID:
+            if not uuid_is_valid(self.nodes[nid].s):
+                raise DecodeError(DecodeError.KIND_RANGE, offset)
+            return
+        if kind == LT_TIME_MILLIS:
+            if not time_millis_valid(Int32(self.nodes[nid].i)):
+                raise DecodeError(DecodeError.KIND_RANGE, offset)
+            return
+        if kind == LT_TIME_MICROS:
+            if not time_micros_valid(self.nodes[nid].i):
+                raise DecodeError(DecodeError.KIND_RANGE, offset)
+            return
+        if kind == LT_DURATION:
+            var bi = Int(self.nodes[nid].i)
+            if bi < 0 or bi >= len(self.bytes_len) or self.bytes_len[bi] != 12:
+                raise DecodeError(DecodeError.KIND_RANGE, offset)
 
     def is_null(self) -> Bool:
         return self.root >= 0 and self.nodes[self.root].kind == AV_NULL
