@@ -1,0 +1,4 @@
+import idl "leaf_idl.avdl";
+record WrapIdl {
+  LeafIdl x;
+}

@@ -111,9 +111,13 @@ protocol Bench {
 }
 ```
 
-`T?` in IDL is `["null", T]`. `import schema "path"` reads a `.avsc` file.
-`import idl "path"` reads another `.avdl`. `import protocol "path"` reads a
-JSON `.avpr` and keeps `types`, not RPC `messages`.
+`T?` in IDL is `["null", T]`. Field defaults are IDL literals (including
+`[1, 2]`, `{ k: "v" }`, and `{ field = value }`); the parser stores Avro JSON.
+An `error` declaration is a record with `is_error` set. `import schema "path"`
+reads a `.avsc` file. `import idl "path"` reads another `.avdl`.
+`import protocol "path"` reads a JSON `.avpr` and keeps `types`, not RPC
+`messages`. `FileImportResolver` reads those paths relative to the including
+file. A cyclic import is a `SchemaError`.
 
 Checked-in examples live under `testdata/avsc/` and `testdata/avdl/`.
 
@@ -175,6 +179,30 @@ file by hand.
 Resolution uses `decode_resolving[T](buf, writer_schema_json)`. Object Container
 Files use `write_ocf` / `read_ocf[T]`. Single-object frames use
 `encode_single_object`. Official Avro JSON uses `encode_json` / `decode_json`.
+
+## Logical types
+
+Avro logical types are annotations on an underlying primitive. Binary bytes
+stay that primitive. The codecs convert and check the high-level value.
+
+| Logical type | Underlying | Codec |
+| --- | --- | --- |
+| `decimal` | `bytes` or `fixed` | `encode_decimal` / `decode_decimal` (or `*_fixed`) |
+| `uuid` | `string` | `encode_uuid` / `decode_uuid` |
+| `date` | `int` days since 1970-01-01 | `encode_date` / `decode_date` |
+| `time-millis` | `int` | `encode_time_millis` / `decode_time_millis` |
+| `time-micros` | `long` | `encode_time_micros` / `decode_time_micros` |
+| `timestamp-millis` / `local-timestamp-millis` | `long` | `encode_timestamp_millis` / `decode_timestamp_millis` |
+| `timestamp-micros` / `local-timestamp-micros` | `long` | `encode_timestamp_micros` / `decode_timestamp_micros` |
+| `duration` | `fixed` of size 12 | `encode_duration` / `decode_duration` |
+
+`parse_avsc` stores `logicalType` on the schema node. `precision` and `scale`
+(and any other unrecognized object key) land in leftover attributes. A
+logical type that does not match its underlying type is stored and ignored,
+as the spec requires. `GenericDatum` decode rejects an invalid `uuid` string
+and out-of-range `time-millis` / `time-micros`.
+
+In IDL, put `@logicalType("date")` on the field, before the type.
 
 ## Tests
 

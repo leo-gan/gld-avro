@@ -1,15 +1,67 @@
 from std.collections import List
 
+from json.emit import emit_json
+from json.parse import parse_json
+from json.value import JSON_ARRAY, JSON_OBJECT, JSON_STRING
 from schema.model import SchemaError, SchemaPool
 from schema.parse_avpr import parse_avpr
 from schema.parse_avsc import parse_avsc
+
+
+struct FileImportResolver(Copyable, Movable, Defaultable):
+    """Reads import paths relative to the including file."""
+
+    var _pad: Int
+
+    def __init__(out self):
+        self._pad = 0
+
+    def resolve(
+        self, kind: String, path: String, from_file: String
+    ) raises SchemaError -> String:
+        _ = kind
+        return _read_rel(from_file, path)
+
+
+# DESIGN name ImportResolver. A Mojo trait here hung the compiler; this is the
+# concrete type parse_avdl accepts.
+comptime ImportResolver = FileImportResolver
 
 
 def parse_avdl(text: String) raises SchemaError -> SchemaPool:
     return parse_avsc(_idl_to_avsc(text))
 
 
+def parse_avdl(
+    text: String, resolver: FileImportResolver
+) raises SchemaError -> SchemaPool:
+    return parse_avdl(text, String(), resolver)
+
+
 def parse_avdl(text: String, from_file: String) raises SchemaError -> SchemaPool:
+    var r = FileImportResolver()
+    return parse_avdl(text, from_file, r)
+
+
+def parse_avdl(
+    text: String, from_file: String, resolver: FileImportResolver
+) raises SchemaError -> SchemaPool:
+    var stack = List[String]()
+    return _parse_avdl_res(text, from_file, resolver, stack)
+
+
+def _parse_avdl_res(
+    text: String,
+    from_file: String,
+    resolver: FileImportResolver,
+    mut stack: List[String],
+) raises SchemaError -> SchemaPool:
+    var i = 0
+    while i < len(stack):
+        if stack[i] == from_file:
+            raise SchemaError("IDL: cyclic import " + from_file)
+        i += 1
+    stack.append(from_file)
     var json = _idl_to_avsc(text)
     var p = 0
     var extra = List[String]()
@@ -23,13 +75,20 @@ def parse_avdl(text: String, from_file: String) raises SchemaError -> SchemaPool
         if qs < 0:
             raise SchemaError("IDL: import missing path")
         var path = _until(text, qs + 1, 34)
-        var body = _read_rel(from_file, path)
+        var body = resolver.resolve(kind, path, from_file)
         if kind == "idl":
-            extra.append(_idl_to_avsc(body))
+            var nested = _join_dir(from_file, path)
+            var np = _parse_avdl_res(body, nested, resolver, stack)
+            extra.append(np.original_json)
         elif kind == "schema":
             extra.append(body)
         elif kind == "protocol":
-            extra.append(parse_avpr(body).original_json)
+            _ = parse_avpr(body)
+            var tjs = _avpr_type_jsons(body)
+            var ti = 0
+            while ti < len(tjs):
+                extra.append(tjs[ti])
+                ti += 1
         else:
             raise SchemaError("IDL: unknown import kind")
         p = qs + path.byte_length() + 1
@@ -37,14 +96,73 @@ def parse_avdl(text: String, from_file: String) raises SchemaError -> SchemaPool
         return parse_avsc(json)
     extra.append(json)
     var arr = String("[")
-    var i = 0
-    while i < len(extra):
-        if i > 0:
+    var j = 0
+    while j < len(extra):
+        if j > 0:
             arr += ","
-        arr += extra[i]
-        i += 1
+        arr += extra[j]
+        j += 1
     arr += "]"
     return parse_avsc(arr)
+
+
+def _avpr_type_jsons(text: String) raises SchemaError -> List[String]:
+    var out = List[String]()
+    try:
+        var doc = parse_json(text)
+        if doc.kind(doc.root) != JSON_OBJECT:
+            return out^
+        var ns = String()
+        var nsf = doc.find(doc.root, String("namespace"))
+        if nsf >= 0 and doc.kind(nsf) == JSON_STRING:
+            ns = doc.as_string(nsf)
+        var types = doc.find(doc.root, String("types"))
+        if types < 0 or doc.kind(types) != JSON_ARRAY:
+            return out^
+        var n = doc.nodes[types].count
+        var i = 0
+        while i < n:
+            var child = doc.child(types, i)
+            var js = emit_json(doc, child)
+            if (
+                ns.byte_length() > 0
+                and doc.kind(child) == JSON_OBJECT
+                and doc.find(child, String("namespace")) < 0
+            ):
+                js = _inject_ns(js, ns)
+            out.append(js)
+            i += 1
+    except _:
+        raise SchemaError("IDL: invalid imported protocol")
+    return out^
+
+
+def _inject_ns(js: String, ns: String) -> String:
+    if js.byte_length() == 0 or Int(js.as_bytes()[0]) != 123:
+        return js
+    var rest = List[Byte]()
+    var b = js.as_bytes()
+    var i = 1
+    while i < len(b):
+        rest.append(b[i])
+        i += 1
+    try:
+        return String("{\"namespace\":\"") + ns + "\"," + String(from_utf8=rest)
+    except _:
+        return js
+
+
+def _join_dir(from_file: String, path: String) -> String:
+    var b = from_file.as_bytes()
+    var last = -1
+    var i = 0
+    while i < len(b):
+        if Int(b[i]) == 47:
+            last = i
+        i += 1
+    if last <= 0:
+        return path
+    return _slice(from_file, 0, last) + "/" + path
 
 
 def _idl_to_avsc(text: String) raises SchemaError -> String:
@@ -102,7 +220,11 @@ def _convert_record(text: String, rec_pos: Int, ns: String) raises SchemaError -
         raise SchemaError("IDL: record missing body")
     var end = _after_block(text, brace)
     var body = _slice(text, brace + 1, end - 1)
-    var json = String("{\"type\":\"record\",\"name\":\"") + name + "\""
+    var kw = _ident_at(text, rec_pos)
+    var tlabel = String("record")
+    if kw == "error":
+        tlabel = String("error")
+    var json = String("{\"type\":\"") + tlabel + "\",\"name\":\"" + name + "\""
     if ns.byte_length() > 0:
         json += ",\"namespace\":\"" + ns + "\""
     json += ",\"fields\":["
@@ -114,16 +236,25 @@ def _convert_record(text: String, rec_pos: Int, ns: String) raises SchemaError -
         i = _skip_ws(body, i)
         if i >= body.byte_length():
             break
-        if _byte(body, i) == 64:
+        var logical = String()
+        while i < body.byte_length() and _byte(body, i) == 64:
+            var aname = _ident_at(body, i + 1)
             var par = _find_from(body, String("("), i)
-            if par >= 0:
-                var cl = _find_from(body, String(")"), par)
-                if cl >= 0:
-                    i = cl + 1
-                    continue
-            i += 1
-            continue
-        var ty = _type_at(body, i)
+            if par < 0:
+                i += 1
+                break
+            var cl = _find_from(body, String(")"), par)
+            if cl < 0:
+                i += 1
+                break
+            if aname == "logicalType":
+                var qs = _find_from(body, String("\""), par)
+                if qs >= 0 and qs < cl:
+                    logical = _until(body, qs + 1, 34)
+            i = _skip_ws(body, cl + 1)
+        if i >= body.byte_length():
+            break
+        var ty = _apply_logical(_type_at(body, i), logical)
         i = _skip_ws(body, i + _type_span(body, i))
         var fname = _ident_at(body, i)
         if fname.byte_length() == 0:
@@ -190,6 +321,23 @@ def _convert_fixed(text: String, pos: Int, ns: String) -> String:
         json += ",\"namespace\":\"" + ns + "\""
     json += ",\"size\":" + size + "}"
     return json
+
+
+def _apply_logical(ty: String, logical: String) -> String:
+    if logical.byte_length() == 0 or ty.byte_length() == 0:
+        return ty
+    if _starts_at(ty, 0, String("[\"null\",")):
+        var inner = _slice(ty, 8, ty.byte_length() - 1)
+        return "[\"null\"," + _wrap_logical(inner, logical) + "]"
+    return _wrap_logical(ty, logical)
+
+
+def _wrap_logical(ty: String, logical: String) -> String:
+    if _byte(ty, 0) == 34:
+        return "{\"type\":" + ty + ",\"logicalType\":\"" + logical + "\"}"
+    if _byte(ty, 0) == 123:
+        return "{\"logicalType\":\"" + logical + "\"," + _slice(ty, 1, ty.byte_length())
+    return ty
 
 
 def _type_at(text: String, start: Int) -> String:
@@ -262,7 +410,58 @@ def _has_q(text: String, start: Int) -> Bool:
 
 
 def _literal_at(text: String, start: Int) -> String:
+    """Convert one IDL literal to Avro JSON. Iterative so nested arrays/objects compile."""
     var i = _skip_ws(text, start)
+    var c0 = _byte(text, i)
+    if c0 != 91 and c0 != 123:
+        return _atom_lit(text, i)
+    var end: Int
+    if c0 == 91:
+        end = _after_match(text, i, 91, 93)
+    else:
+        end = _after_match(text, i, 123, 125)
+    var out = String()
+    var pos = i
+    while pos < end:
+        var c = _byte(text, pos)
+        if c == 32 or c == 9 or c == 10 or c == 13:
+            pos += 1
+            continue
+        if c == 61:
+            out += ":"
+            pos += 1
+            continue
+        if c == 91 or c == 93 or c == 123 or c == 125 or c == 44 or c == 58:
+            out += _ch(c)
+            pos += 1
+            continue
+        if c == 34:
+            var s = _until(text, pos + 1, 34)
+            out += "\"" + s + "\""
+            pos += s.byte_length() + 2
+            continue
+        if c == 45 or (c >= 48 and c <= 57):
+            var num = _number_at(text, pos)
+            out += num
+            pos += num.byte_length()
+            continue
+        var id = _ident_at(text, pos)
+        if id.byte_length() == 0:
+            pos += 1
+            continue
+        var after = _skip_ws(text, pos + id.byte_length())
+        var as_key = after < end and (_byte(text, after) == 58 or _byte(text, after) == 61)
+        if as_key:
+            out += "\"" + id + "\""
+        elif id == "null" or id == "true" or id == "false":
+            out += id
+        else:
+            out += "\"" + id + "\""
+        pos += id.byte_length()
+    return out
+
+
+def _atom_lit(text: String, i: Int) -> String:
     if _starts_at(text, i, String("null")):
         return String("null")
     if _starts_at(text, i, String("true")):
@@ -286,9 +485,37 @@ def _literal_span(text: String, start: Int) -> Int:
         return 5
     if _byte(text, i) == 34:
         return _until(text, i + 1, 34).byte_length() + 2
+    if _byte(text, i) == 91:
+        return _after_match(text, i, 91, 93) - i
+    if _byte(text, i) == 123:
+        return _after_match(text, i, 123, 125) - i
     if _byte(text, i) == 45 or (_byte(text, i) >= 48 and _byte(text, i) <= 57):
         return _number_at(text, i).byte_length()
     return _ident_at(text, i).byte_length()
+
+
+def _ch(c: Int) -> String:
+    var b = List[Byte]()
+    b.append(Byte(c))
+    try:
+        return String(from_utf8=b)
+    except _:
+        return String()
+
+
+def _after_match(text: String, open_at: Int, open_ch: Int, close_ch: Int) -> Int:
+    var depth = 0
+    var i = open_at
+    while i < text.byte_length():
+        var c = _byte(text, i)
+        if c == open_ch:
+            depth += 1
+        elif c == close_ch:
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return text.byte_length()
 
 
 def _number_at(text: String, start: Int) -> String:

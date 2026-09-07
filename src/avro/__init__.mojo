@@ -8,6 +8,53 @@ from runtime.generic import (
     GenericRecord,
     GenericUnion,
 )
+from runtime.logical import (
+    LT_DATE,
+    LT_DECIMAL,
+    LT_DURATION,
+    LT_LOCAL_TIMESTAMP_MICROS,
+    LT_LOCAL_TIMESTAMP_MILLIS,
+    LT_TIME_MICROS,
+    LT_TIME_MILLIS,
+    LT_TIMESTAMP_MICROS,
+    LT_TIMESTAMP_MILLIS,
+    LT_UUID,
+    CivilDate,
+    LogicalDuration,
+    civil_from_days,
+    days_from_civil,
+    decimal_unscaled_from_i64,
+    decimal_unscaled_to_i64,
+    decode_date,
+    decode_decimal,
+    decode_decimal_fixed,
+    decode_duration,
+    decode_local_timestamp_micros,
+    decode_local_timestamp_millis,
+    decode_time_micros,
+    decode_time_millis,
+    decode_timestamp_micros,
+    decode_timestamp_millis,
+    decode_uuid,
+    duration_from_fixed,
+    duration_to_fixed,
+    encode_date,
+    encode_decimal,
+    encode_decimal_fixed,
+    encode_duration,
+    encode_local_timestamp_micros,
+    encode_local_timestamp_millis,
+    encode_time_micros,
+    encode_time_millis,
+    encode_timestamp_micros,
+    encode_timestamp_millis,
+    encode_uuid,
+    logical_kind,
+    logical_underlying_ok,
+    time_micros_valid,
+    time_millis_valid,
+    uuid_is_valid,
+)
 from runtime.json_codec import (
     decode_default,
     decode_json,
@@ -20,7 +67,7 @@ from runtime.resolve import can_resolve, compile_plan, named_match
 from runtime.soe import decode_single_object, encode_single_object, soe_fingerprint
 from schema.canonical import canonical_form
 from schema.fingerprint import crc64_avro
-from schema.parse_avdl import parse_avdl
+from schema.parse_avdl import FileImportResolver, ImportResolver, parse_avdl
 from schema.parse_avpr import parse_avpr
 from schema.parse_avsc import parse_avsc
 from wire.reader import WireReader

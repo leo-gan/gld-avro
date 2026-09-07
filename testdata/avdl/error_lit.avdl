@@ -1,0 +1,8 @@
+error Boom {
+  string msg = "x";
+}
+record Holder {
+  array<int> xs = [1, 2];
+  map<string> m = { k: "v" };
+  Boom err = { msg = "x" };
+}

@@ -66,10 +66,10 @@ The sibling library `gld-protobuf` proved the product shape: pixi + Mojo 1.0, fo
 10. Typed `DecodeError` with `kind: Int`, `offset: Int`, and `field: Int` (`0` means unknown).
 11. Independently useful library. Not coupled to any other project.
 12. Recursive named types in generated code: detect cycles on the named-type graph with strongly connected components. Emit heap `Box` for any field whose type (after unwrapping nullable / array / map) is in the current type’s SCC. Testdata includes `LongList` and mutual `A`/`B`. Non-optional recursive fields are a codegen error.
+13. Logical-type codecs for decimal, uuid, date, time-millis/micros, timestamp-millis/micros, local-timestamp, and duration. Full IDL literals, `ImportResolver` / `FileImportResolver`, and `error` as a first-class record.
 
 ### Non-goals (v1)
 
-- First-class logical-type codecs (decimal, uuid, date, time-millis/micros, timestamp-millis/micros, local-timestamp, duration). Store and round-trip the **underlying** primitive (`int` / `long` / `bytes` / `fixed` / `string`). Preserve `logicalType` plus leftover attributes (`precision`, `scale`, and any other unrecognized keys) on the schema model so a later PR can add codecs without a model change.
 - Avro RPC, protocol message transport, handshake, or `mailbox`.
 - IDL `protocol` RPC bodies as runnable stubs. IDL is parsed far enough to emit schemas for records, enums, fixed, errors-as-records, arrays, maps, unions, and imports (`import idl` → `.avdl`, `import schema` → `.avsc`, `import protocol` → JSON `.avpr`).
 - Snappy, bzip2, xz, or zstandard OCF codecs.
@@ -81,7 +81,6 @@ The sibling library `gld-protobuf` proved the product shape: pixi + Mojo 1.0, fo
 
 ### Later (explicitly planned, not v1)
 
-- Logical-type codecs.
 - Additional OCF codecs.
 - Optional Confluent framing helper that is clearly named and not the default.
 - Zero-copy `StringSpan` views on decode.
@@ -1302,7 +1301,7 @@ All product forks (license, surface, API style, resolution, IDL, Optional[T], lo
 8. **Resolution in v1**, compiled to a `ResolvePlan`. Same-schema is a trivial plan.
 9. **Parse `.avsc` and `.avdl` in Mojo.** No host Avro compiler for codegen.
 10. **Nullable two-branch unions are `Optional[T]`.** Branch index follows the schema order.
-11. **Logical types are stored and ignored as codecs in v1.** Underlying primitives round-trip. `leftover_attrs` holds `precision` / `scale` and other unrecognized keys.
+11. **Logical types are stored and have codecs.** Underlying primitives still round-trip for generic and generated types. Codecs convert and validate decimal, uuid, date, time, timestamp, local-timestamp, and duration. `leftover_attrs` holds `precision` / `scale` and other unrecognized keys. A logical type on the wrong underlying type is stored and ignored.
 12. **In-tree JSON arena** for schemas and Avro JSON encoding.
 13. **In-tree raw DEFLATE** (RFC 1951, no zlib wrapper) for OCF codec `deflate`.
 14. **Schema, JSON, and generic values are arenas of nodes** so Mojo 1.0 Deinitable recursion does not block the model.
