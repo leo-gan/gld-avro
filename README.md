@@ -30,7 +30,7 @@ pixi install
 pixi run test
 ```
 
-Requires **Mojo 1.0.0**.
+Requires **Mojo 1.1.0**.
 
 ## Generate Mojo from a schema
 

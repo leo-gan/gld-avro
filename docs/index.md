@@ -19,7 +19,7 @@ other C, C++, or Rust Avro library.
 
     ---
 
-    Install Mojo 1.0.0 with pixi, write a `.avsc` or `.avdl` schema, generate
+    Install Mojo 1.1.0 with pixi, write a `.avsc` or `.avdl` schema, generate
     Mojo, run the tests, and publish this site.
 
     [:octicons-arrow-right-24: Open Instructions](instructions.md)

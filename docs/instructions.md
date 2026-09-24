@@ -1,6 +1,6 @@
 # Instructions
 
-## Install Mojo 1.0.0
+## Install Mojo 1.1.0
 
 ```bash
 git clone https://github.com/leo-gan/gld-avro.git
