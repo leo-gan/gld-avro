@@ -8,7 +8,7 @@
 | **Status** | Draft (rev 4) |
 | **Target repo** | `/home/leo/PycharmProjects/GLD/gld-avro` (greenfield standalone library; empty directory as of 2026-09-06) |
 | **License** | MIT, Copyright (c) 2026 Leonid Ganeline |
-| **Recommended Mojo pin** | `mojo == 1.0.0` (stable, 2026-08-11) |
+| **Recommended Mojo pin** | `mojo == 1.1.0` (stable, 2026-09-17) |
 | **Spec target** | [Apache Avro 1.11.1 Specification](https://avro.apache.org/docs/1.11.1/specification/) (compatible with 1.12 encodings) |
 
 ---
